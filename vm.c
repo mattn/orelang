@@ -125,7 +125,7 @@ V eval(mpc_ast_t* t) {
 
 int main(int argc, char **argv) {
   if (argc != 2) {
-    fprintf(stderr, "usage of %s: file", argv[0]);
+    fprintf(stderr, "usage of %s: file\n", argv[0]);
     exit(0);
   }
   mpc_result_t result;
