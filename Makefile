@@ -6,7 +6,7 @@ OBJS = $(subst .c,.o,$(SRCS))
 
 CFLAGS = 
 LIBS = 
-TARGET = orelang.exe
+TARGET = orelang
 
 all : $(TARGET)
 
