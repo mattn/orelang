@@ -5,7 +5,7 @@ SRCS = \
 OBJS = $(subst .c,.o,$(SRCS))
 
 CFLAGS = 
-LIBS = 
+LIBS = -lm
 TARGET = orelang
 
 all : $(TARGET)
