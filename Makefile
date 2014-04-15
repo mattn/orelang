@@ -4,7 +4,7 @@ SRCS = \
 
 OBJS = $(subst .c,.o,$(SRCS))
 
-CFLAGS = 
+CFLAGS = -g
 LIBS = -lm
 TARGET = ore
 ifeq ($(OS),Windows_NT)
