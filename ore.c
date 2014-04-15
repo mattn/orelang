@@ -172,6 +172,7 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
       }
       break;
     case ORE_TYPE_FUNC:
+      // TODO: ここをちゃんと実装して引数を渡せる様にする
       v = ore_eval(ore, fn.v.f);
       break;
   }
@@ -318,8 +319,9 @@ int main(int argc, char **argv) {
   ore_context* ore = ore_new(NULL);
   ore_define_cfunc(ore, "println", ore_println);
   ore_eval(ore, result.output);
-  mpc_ast_delete(result.output);
   ore_destroy(ore);
+
+  mpc_ast_delete(result.output);
 
 leave:
   mpc_cleanup(11,
