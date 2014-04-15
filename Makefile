@@ -6,7 +6,7 @@ OBJS = $(subst .c,.o,$(SRCS))
 
 CFLAGS = -g
 LIBS = -lm
-TARGET = orelang
+TARGET = ore
 ifeq ($(OS),Windows_NT)
 TARGET := ${TARGET}.exe
 endif
