@@ -16,7 +16,9 @@
 "  lexp      : <term> (('+' | '-') <term>)* ;                \n" \
 "  let       : <ident> '=' <lexp> ';' ;                      \n" \
 "  call      : <ident> '(' <lexp>? (',' <lexp>)* ')' ';' ;   \n" \
-"  stmts     : (<let> | <call>)* /$/ ;                       \n"
+"  comment   : /#[^\n]*/ ;                                   \n" \
+"  eof       : /$/ ;                                         \n" \
+"  stmts     : (<let> | <call> | <comment>)* <eof> ;         \n"
 
 #define is_a(t, a) (strstr(t->tag, a) != NULL)
 
@@ -47,6 +49,9 @@ klist_t(ident) *gc;
 
 V eval(mpc_ast_t* t) {
   int i;
+  if (is_a(t, "eof") || is_a(t, "comment")) {
+    return V_NIL;
+  }
   if (is_a(t, "number")) {
     V v = { TYPE_NUM };
     v.v.i = atoi(t->contents);
@@ -117,9 +122,13 @@ V eval(mpc_ast_t* t) {
     }
     return V_NIL;
   }
-  for (i = 0; i < t->children_num; i++) {
-    eval(t->children[i]);
+  if (t->tag[0] == '>') {
+    for (i = 0; i < t->children_num; i++) {
+      eval(t->children[i]);
+    }
+    return V_NIL;
   }
+  fprintf(stderr, "Unknwn operation '%s'\n", t->tag);
   return V_NIL;
 }
 
@@ -128,19 +137,20 @@ int main(int argc, char **argv) {
     fprintf(stderr, "usage of %s: file\n", argv[0]);
     exit(0);
   }
-  mpc_result_t result;
-  mpc_parser_t* Number = mpc_new("number");
-  mpc_parser_t* Factor = mpc_new("factor");
-  mpc_parser_t* String = mpc_new("string");
-  mpc_parser_t* Ident  = mpc_new("ident");
-  mpc_parser_t* Term   = mpc_new("term");
-  mpc_parser_t* Lexp   = mpc_new("lexp");
-  mpc_parser_t* Let    = mpc_new("let");
-  mpc_parser_t* Call   = mpc_new("call");
-  mpc_parser_t* Stmts  = mpc_new("stmts");
+  mpc_parser_t* Number  = mpc_new("number");
+  mpc_parser_t* Factor  = mpc_new("factor");
+  mpc_parser_t* String  = mpc_new("string");
+  mpc_parser_t* Ident   = mpc_new("ident");
+  mpc_parser_t* Term    = mpc_new("term");
+  mpc_parser_t* Lexp    = mpc_new("lexp");
+  mpc_parser_t* Let     = mpc_new("let");
+  mpc_parser_t* Call    = mpc_new("call");
+  mpc_parser_t* Comment = mpc_new("comment");
+  mpc_parser_t* Eof     = mpc_new("eof");
+  mpc_parser_t* Stmts   = mpc_new("stmts");
 
   mpc_err_t* err = mpca_lang(MPC_LANG_DEFAULT, STRUCTURE,
-      Number, Factor, String, Ident, Term, Lexp, Let, Call, Stmts);
+      Number, Factor, String, Ident, Term, Lexp, Let, Call, Comment, Eof, Stmts);
   if (err != NULL) {
     mpc_err_print(err);
     mpc_err_delete(err);
@@ -150,6 +160,7 @@ int main(int argc, char **argv) {
   env = kh_init(ident);
   gc = kl_init(ident);
 
+  mpc_result_t result;
   if (!mpc_parse_contents(argv[1], Stmts, &result)) {
     mpc_err_print(result.error);
     mpc_err_delete(result.error);
@@ -162,7 +173,7 @@ int main(int argc, char **argv) {
   kl_destroy(ident, gc);
 
 leave:
-  mpc_cleanup(9,
-      Number, Factor, String, Ident, Term, Lexp, Let, Call, Stmts);
+  mpc_cleanup(11,
+      Number, Factor, String, Ident, Term, Lexp, Let, Call, Comment, Eof, Stmts);
   return 0;
 }
