@@ -7,6 +7,9 @@ OBJS = $(subst .c,.o,$(SRCS))
 CFLAGS = 
 LIBS = -lm
 TARGET = orelang
+ifeq ($(OS),Windows_NT)
+TARGET := ${TARGET}.exe
+endif
 
 all : $(TARGET)
 
