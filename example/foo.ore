@@ -1,0 +1,7 @@
+# calculation
+a = 1;
+a = a * 2 + 1;
+b = "hello";
+
+# display
+println(b, a + 1);
