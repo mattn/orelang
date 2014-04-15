@@ -35,71 +35,93 @@ typedef struct {
   } v;
 } ore_value;
 
-ore_value ORE_NIL = { ORE_TYPE_NIL, 0 };
-
 KHASH_MAP_INIT_STR(ident, ore_value)
-khash_t(ident) *env;
 
-void v_free(void *p) {
+void ore_free(void *p);
+KLIST_INIT(ident, ore_value, ore_free)
+
+typedef struct {
+  khash_t(ident) *env;
+  klist_t(ident) *gc;
+} ore_context;
+
+void
+ore_free(void *p) {
   ore_value* v = (ore_value*) p;
   if (v->t == ORE_TYPE_STR)
     free(v->v.s);
 }
-KLIST_INIT(ident, ore_value, v_free)
-klist_t(ident) *gc;
 
-ore_value ore_call(ore_func ) {
+ore_value
+ore_call(ore_func ) {
 }
 
-ore_value ore_eval(mpc_ast_t* t) {
+ore_value
+ore_value_nil() {
+  ore_value v = { ORE_TYPE_NIL, 0 };
+  return v;
+}
+
+ore_value
+ore_value_num(ore_context* ore, const char* s) {
+  ore_value v = { ORE_TYPE_NUM };
+  v.v.i = atoi(s);
+  return v;
+}
+
+ore_value
+ore_value_str(ore_context* ore, const char* s) {
+  ore_value v = { ORE_TYPE_STR };
+  size_t l = strlen(s) - 2;
+  v.v.s = calloc(1, l + 1);
+  strncpy(v.v.s, s + 1, l);
+  v.v.s[l] = 0;
+  *kl_pushp(ident, ore->gc) = v;
+  return v;
+}
+
+ore_value
+ore_eval(ore_context* ore, mpc_ast_t* t) {
   int i;
+  ore_value v;
   if (is_a(t, "eof") || is_a(t, "comment")) {
-    return ORE_NIL;
+    return ore_value_nil();
   }
   if (is_a(t, "number")) {
-    ore_value v = { ORE_TYPE_NUM };
-    v.v.i = atoi(t->contents);
-    return v;
+    return ore_value_num(ore, t->contents);
   }
   if (is_a(t, "string")) {
-    ore_value v = { ORE_TYPE_STR };
-    size_t l = strlen(t->contents) - 2;
-    v.v.s = calloc(1, l + 1);
-    strncpy(v.v.s, t->contents + 1, l);
-    v.v.s[l] = 0;
-    *kl_pushp(ident, gc) = v;
-    return v;
+    return ore_value_str(ore, t->contents);
   }
   if (is_a(t, "ident")) {
-    khint_t k = kh_get(ident, env, t->contents);
-    if (k == kh_end(env)) {
-      return ORE_NIL;
+    khint_t k = kh_get(ident, ore->env, t->contents);
+    if (k == kh_end(ore->env)) {
+      return ore_value_nil();
     }
-    return kh_value(env, k);
+    return kh_value(ore->env, k);
   }
   if (is_a(t, "factor")) {
-    return ore_eval(t->children[1]);
+    return ore_eval(ore, t->children[1]);
   }
   if (is_a(t, "lexp") || is_a(t, "term")) {
-    ore_value lhs = ore_eval(t->children[0]);
+    v = ore_eval(ore, t->children[0]);
     for (i = 1; i < t->children_num; i += 2) {
       char* op = t->children[i]->contents;
-      ore_value rhs = ore_eval(t->children[i+1]);
+      ore_value rhs = ore_eval(ore, t->children[i+1]);
       int iv = rhs.t == ORE_TYPE_NUM ? rhs.v.i : 0;
-      if (strcmp(op, "+") == 0) { lhs.v.i += iv; }
-      if (strcmp(op, "-") == 0) { lhs.v.i -= iv; }
-      if (strcmp(op, "*") == 0) { lhs.v.i *= iv; }
-      if (strcmp(op, "/") == 0) { lhs.v.i /= iv; }
-      if (strcmp(op, "%") == 0) { lhs.v.i %= iv; }
+      if (strcmp(op, "+") == 0) { v.v.i += iv; }
+      if (strcmp(op, "-") == 0) { v.v.i -= iv; }
+      if (strcmp(op, "*") == 0) { v.v.i *= iv; }
+      if (strcmp(op, "/") == 0) { v.v.i /= iv; }
+      if (strcmp(op, "%") == 0) { v.v.i %= iv; }
     }
-    return lhs;
+    return v;
   }
   if (is_a(t, "let")) {
     int r = 0;
-    ore_value v;
-    khint_t k = kh_put(ident, env, t->children[0]->contents, &r);
-    v = ore_eval(t->children[2]);
-    kh_value(env, k) = v;
+    khint_t k = kh_put(ident, ore->env, t->children[0]->contents, &r);
+    v = ore_eval(ore, t->children[2]);
+    kh_value(ore->env, k) = v;
     return v;
   }
   if (is_a(t, "call")) {
@@ -107,7 +129,7 @@ ore_value ore_eval(mpc_ast_t* t) {
     if (!strcmp(t->children[0]->contents, "println")) {
       for (i = 2; i < t->children_num - 2; i += 2) {
         if (i != 2) printf(", ");
-        ore_value v = ore_eval(t->children[i]);
+        v = ore_eval(ore, t->children[i]);
         switch (v.t) {
           case ORE_TYPE_NIL:
             printf("nil");
@@ -124,16 +146,29 @@ ore_value ore_eval(mpc_ast_t* t) {
     } else {
       fprintf(stderr, "Unknwn function '%s'\n", t->children[0]->contents);
     }
-    return ORE_NIL;
+    return ore_value_nil();
   }
   if (t->tag[0] == '>') {
     for (i = 0; i < t->children_num; i++) {
-      ore_eval(t->children[i]);
+      ore_eval(ore, t->children[i]);
     }
-    return ORE_NIL;
+    return ore_value_nil();
   }
   fprintf(stderr, "Unknwn operation '%s'\n", t->tag);
-  return ORE_NIL;
+  return ore_value_nil();
+}
+
+ore_context*
+ore_new() {
+  ore_context* ore = (ore_context*) malloc(sizeof(ore_context));
+  ore->env = kh_init(ident);
+  ore->gc = kl_init(ident);
+  return ore;
+}
+
+void
+ore_destroy(ore_context* ore) {
+  kl_destroy(ident, ore->gc);
 }
 
 int main(int argc, char **argv) {
@@ -161,9 +196,6 @@ int main(int argc, char **argv) {
     goto leave;
   }
 
-  env = kh_init(ident);
-  gc = kl_init(ident);
-
   mpc_result_t result;
   if (!mpc_parse_contents(argv[1], Stmts, &result)) {
     mpc_err_print(result.error);
@@ -172,9 +204,11 @@ int main(int argc, char **argv) {
   }
 
   mpc_ast_print(result.output);
-  ore_eval(result.output);
+
+  ore_context* ore = ore_new();
+  ore_eval(ore, result.output);
   mpc_ast_delete(result.output);
-  kl_destroy(ident, gc);
+  ore_destroy(ore);
 
 leave:
   mpc_cleanup(11,
