@@ -22,9 +22,10 @@
 
 #define is_a(t, a) (strstr(t->tag, a) != NULL)
 
-#define TYPE_NIL 0
-#define TYPE_NUM 1
-#define TYPE_STR 2
+#define ORE_TYPE_NIL 0
+#define ORE_TYPE_NUM 1
+#define ORE_TYPE_STR 2
+#define ORE_TYPE_FNC 3
 
 typedef struct {
   int t;
@@ -32,33 +33,36 @@ typedef struct {
     int i;
     char* s;
   } v;
-} V;
+} ore_value;
 
-V V_NIL = { TYPE_NIL, 0 };
+ore_value ORE_NIL = { ORE_TYPE_NIL, 0 };
 
-KHASH_MAP_INIT_STR(ident, V)
+KHASH_MAP_INIT_STR(ident, ore_value)
 khash_t(ident) *env;
 
 void v_free(void *p) {
-  V* v = (V*) p;
-  if (v->t == TYPE_STR)
+  ore_value* v = (ore_value*) p;
+  if (v->t == ORE_TYPE_STR)
     free(v->v.s);
 }
-KLIST_INIT(ident, V, v_free)
+KLIST_INIT(ident, ore_value, v_free)
 klist_t(ident) *gc;
 
-V eval(mpc_ast_t* t) {
+ore_value ore_call(ore_func ) {
+}
+
+ore_value ore_eval(mpc_ast_t* t) {
   int i;
   if (is_a(t, "eof") || is_a(t, "comment")) {
-    return V_NIL;
+    return ORE_NIL;
   }
   if (is_a(t, "number")) {
-    V v = { TYPE_NUM };
+    ore_value v = { ORE_TYPE_NUM };
     v.v.i = atoi(t->contents);
     return v;
   }
   if (is_a(t, "string")) {
-    V v = { TYPE_STR };
+    ore_value v = { ORE_TYPE_STR };
     size_t l = strlen(t->contents) - 2;
     v.v.s = calloc(1, l + 1);
     strncpy(v.v.s, t->contents + 1, l);
@@ -69,19 +73,19 @@ V eval(mpc_ast_t* t) {
   if (is_a(t, "ident")) {
     khint_t k = kh_get(ident, env, t->contents);
     if (k == kh_end(env)) {
-      return V_NIL;
+      return ORE_NIL;
     }
     return kh_value(env, k);
   }
   if (is_a(t, "factor")) {
-    return eval(t->children[1]);
+    return ore_eval(t->children[1]);
   }
   if (is_a(t, "lexp") || is_a(t, "term")) {
-    V lhs = eval(t->children[0]);
+    ore_value lhs = ore_eval(t->children[0]);
     for (i = 1; i < t->children_num; i += 2) {
       char* op = t->children[i]->contents;
-      V rhs = eval(t->children[i+1]);
-      int iv = rhs.t == TYPE_NUM ? rhs.v.i : 0;
+      ore_value rhs = ore_eval(t->children[i+1]);
+      int iv = rhs.t == ORE_TYPE_NUM ? rhs.v.i : 0;
       if (strcmp(op, "+") == 0) { lhs.v.i += iv; }
       if (strcmp(op, "-") == 0) { lhs.v.i -= iv; }
       if (strcmp(op, "*") == 0) { lhs.v.i *= iv; }
@@ -92,26 +96,26 @@ V eval(mpc_ast_t* t) {
   }
   if (is_a(t, "let")) {
     int r = 0;
-    V v;
+    ore_value v;
     khint_t k = kh_put(ident, env, t->children[0]->contents, &r);
-    v = eval(t->children[2]);
+    v = ore_eval(t->children[2]);
     kh_value(env, k) = v;
     return v;
   }
   if (is_a(t, "call")) {
-    int r = 0, v;
+    int r = 0;
     if (!strcmp(t->children[0]->contents, "println")) {
       for (i = 2; i < t->children_num - 2; i += 2) {
         if (i != 2) printf(", ");
-        V v = eval(t->children[i]);
+        ore_value v = ore_eval(t->children[i]);
         switch (v.t) {
-          case TYPE_NIL:
+          case ORE_TYPE_NIL:
             printf("nil");
             break;
-          case TYPE_NUM:
+          case ORE_TYPE_NUM:
             printf("%d", v.v.i);
             break;
-          case TYPE_STR:
+          case ORE_TYPE_STR:
             printf("%s", v.v.s);
             break;
         }
@@ -120,16 +124,16 @@ V eval(mpc_ast_t* t) {
     } else {
       fprintf(stderr, "Unknwn function '%s'\n", t->children[0]->contents);
     }
-    return V_NIL;
+    return ORE_NIL;
   }
   if (t->tag[0] == '>') {
     for (i = 0; i < t->children_num; i++) {
-      eval(t->children[i]);
+      ore_eval(t->children[i]);
     }
-    return V_NIL;
+    return ORE_NIL;
   }
   fprintf(stderr, "Unknwn operation '%s'\n", t->tag);
-  return V_NIL;
+  return ORE_NIL;
 }
 
 int main(int argc, char **argv) {
@@ -168,7 +172,7 @@ int main(int argc, char **argv) {
   }
 
   mpc_ast_print(result.output);
-  eval(result.output);
+  ore_eval(result.output);
   mpc_ast_delete(result.output);
   kl_destroy(ident, gc);
 
