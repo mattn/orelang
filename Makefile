@@ -1,12 +1,12 @@
 SRCS = \
 	mpc.c \
-	vm.c
+	ore.c
 
 OBJS = $(subst .c,.o,$(SRCS))
 
 CFLAGS = 
 LIBS = -lm
-TARGET = orelang
+TARGET = ore
 ifeq ($(OS),Windows_NT)
 TARGET := ${TARGET}.exe
 endif
