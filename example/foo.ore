@@ -1,7 +1,22 @@
-# calculation
-a = 1;
+#!ore
+# 計算
+a = 1.0;
 a = a * 2 + 1;
 b = "hello";
-
-# display
 println(b, a + 1);
+
+# 関数宣言
+func foo() {
+  println(1);
+}
+
+# 関数呼出
+foo();
+
+# λ関数
+c = func(){
+  println("lambda");
+};
+
+# λ関数呼出
+c();
