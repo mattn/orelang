@@ -331,7 +331,7 @@ ore_set(ore_context* ore, const char* name, ore_value* v) {
     if (k != kh_end(ore->env)) {
       ore_value old = kh_value(ore->env, k);
       ore_value_unref(&old);
-      kh_value(ore->env, k) = *v; // update ref
+      kh_value(ore->env, k) = old; // update ref
       k = kh_put(ident, ore->env, name, &r);
       ore_value_ref(v);
       kh_value(ore->env, k) = *v;
@@ -455,7 +455,7 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
   return v;
 }
 
-ore_value* ore_index_ref(ore_context* ore, ore_value v, ore_value e) {
+ore_value* ore_index_ref(ore_context* ore, ore_value v, ore_value e, int update) {
   if (v.t == ORE_TYPE_ARRAY) {
     if (e.t != ORE_TYPE_INT) {
       fprintf(stderr, "Array index should be int\n");
@@ -467,10 +467,19 @@ ore_value* ore_index_ref(ore_context* ore, ore_value v, ore_value e) {
     kliter_t(ident)* k;
     kliter_t(ident)* b = kl_begin(a);
     for (k = b; k != kl_end(a); k = kl_next(k)) {
-      if (n == e.v.i)
+      if (n == e.v.i) {
+        if (update) {
+          ore_value old = kl_val(k);
+          ore_value_unref(&old);
+          kl_val(k) = old; // update ref
+        }
         return &kl_val(k);
+      }
       n++;
     }
+    fprintf(stderr, "Out of bounds for array\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return NULL;
   }
   if (v.t == ORE_TYPE_HASH) {
     if (e.t != ORE_TYPE_STR) {
@@ -479,9 +488,21 @@ ore_value* ore_index_ref(ore_context* ore, ore_value v, ore_value e) {
       return NULL;
     }
     khash_t(ident)* h = (khash_t(ident)*) v.v.h;
-    khint_t k = kh_get(ident, h, e.v.s);
-    if (k != kh_end(ore->env)) {
+    if (update) {
+      int r;
+      khint_t k = kh_get(ident, h, e.v.s);
+      if (k != kh_end(ore->env)) {
+        ore_value old = kh_value(ore->env, k);
+        ore_value_unref(&old);
+        kh_value(ore->env, k) = old; // update ref
+      }
+      k = kh_put(ident, h, e.v.s, &r);
       return &kh_value(h, k);
+    } else {
+      khint_t k = kh_get(ident, h, e.v.s);
+      if (k != kh_end(ore->env)) {
+        return &kh_value(h, k);
+      }
     }
     return NULL;
   }
@@ -528,7 +549,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   if (is_a(t, "item")) {
     ore_value v = ore_eval(ore, t->children[0]);
     ore_value e = ore_eval(ore, t->children[2]);
-    ore_value* r = ore_index_ref(ore, v, e);
+    ore_value* r = ore_index_ref(ore, v, e, 0);
     if (r == NULL) {
       return ore_value_nil();
     }
@@ -618,7 +639,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     ore_value rhs = ore_eval(ore, t->children[2]);
     if (is_a(t->children[2], "ident"))
       ore_ref(ore, t->children[2]->contents);
-    ore_value* r = ore_index_ref(ore, lhs, i);
+    ore_value* r = ore_index_ref(ore, lhs, i, 1);
     if (r == NULL) {
       return ore_value_nil();
     }
