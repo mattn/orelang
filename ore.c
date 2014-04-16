@@ -667,7 +667,7 @@ int main(int argc, char **argv) {
   mpc_ast_delete(result.output);
 
 leave:
-  mpc_cleanup(17,
+  mpc_cleanup(21,
       Number, Factor, String, Array, Pair, Hash, Ident,
       Term, Lexp, Let, Var, Vararg, Lambda, Func, Call, Return, Comment, Eof,
       Stmt, Stmts, Program);
