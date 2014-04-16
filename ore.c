@@ -29,7 +29,7 @@
 "return    : \"return\" <lexp> ';' ;                                    \n" \
 "comment   : /#[^\n]*/ ;                                                \n" \
 "eof       : /$/ ;                                                      \n" \
-"stmt      : (<let> | (<call> ';') | <func> | <comment>) ;              \n" \
+"stmt      : (<let> | (<call> ';') | <func> | <return> | <comment>) ; \n" \
 "program   : <stmts> <eof> ;                                            \n"
 
 void ore_value_free(void* p);
@@ -44,6 +44,14 @@ typedef enum {
   ORE_TYPE_FUNC,
   ORE_TYPE_CFUNC
 } ore_type;
+
+typedef enum {
+  ORE_ERROR_NONE,
+  ORE_ERROR_EXCEPTION,
+  ORE_ERROR_RETURN,
+  ORE_ERROR_BREAK,
+  ORE_ERROR_CONTINUE,
+} ore_error;
 
 typedef mpc_ast_t* ore_func;
 
@@ -64,18 +72,21 @@ typedef struct _ore_value {
   int ref;
 } ore_value;
 
+void ore_value_ref(ore_value* v);
+void ore_value_unref(ore_value* v);
+
 KHASH_MAP_INIT_STR(ident, ore_value)
 
 KLIST_INIT(ident, ore_value, ore_value_free)
 
 typedef struct _ore_context {
   khash_t(ident)* env;
+  klist_t(ident)* unnamed;
   struct _ore_context* parent;
+  int err;
 } ore_context;
 
 typedef ore_value (*ore_cfunc_t)(ore_context*, int, ore_value*);
-void ore_value_ref(ore_value v);
-void ore_value_unref(ore_value v);
 
 ore_value ore_call(ore_context*, mpc_ast_t*);
 ore_value ore_eval(ore_context*, mpc_ast_t*);
@@ -83,34 +94,34 @@ ore_context* ore_new(ore_context*);
 void ore_destroy(ore_context*);
 
 void
-ore_value_real_free(ore_value v) {
-  switch (v.t) {
+ore_value_real_free(ore_value* v) {
+  switch (v->t) {
     case ORE_TYPE_STR:
-      free(v.v.s);
-      v.v.s = NULL;
+      printf("free %d, %p, %s\n", v->ref, v->v.s, v->v.s);
+      free(v->v.s);
+      v->v.s = NULL;
       break;
     case ORE_TYPE_FUNC:
       break;
   }
-  v.t = ORE_TYPE_NIL;
+  v->t = ORE_TYPE_NIL;
 }
 
 
 void
 ore_value_free(void *p) {
   ore_value* v = (ore_value*) p;
-  printf("FREE %d\n", v->t);
-  ore_value_unref(*v);
+  ore_value_unref(v);
 }
 
 void
-ore_value_ref(ore_value v) {
-  v.ref++;
+ore_value_ref(ore_value *v) {
+  v->ref++;
 }
 
 void
-ore_value_unref(ore_value v) {
-  if (--v.ref <= 0) {
+ore_value_unref(ore_value* v) {
+  if (--v->ref <= 0) {
     ore_value_real_free(v);
   }
 }
@@ -221,6 +232,8 @@ ore_get(ore_context* ore, const char* name) {
     }
     ore = ore->parent;
   }
+  if (!ore)
+    return ore_value_nil();
   return kh_value(ore->env, k);
 }
 
@@ -232,19 +245,21 @@ ore_set(ore_context* ore, const char* name, ore_value v) {
     k = kh_get(ident, ore->env, name);
     if (k != kh_end(ore->env)) {
       ore_value old = kh_value(ore->env, k);
-      ore_value_unref(old);
+      ore_value_unref(&old);
+      kh_value(ore->env, k) = v; // update ref
       k = kh_put(ident, ore->env, name, &r);
+      ore_value_ref(&v);
       kh_value(ore->env, k) = v;
-      break;
+      return;
     }
     if (ore->parent == NULL) {
       k = kh_put(ident, ore->env, name, &r);
+      ore_value_ref(&v);
       kh_value(ore->env, k) = v;
-      break;
+      return;
     }
     ore = ore->parent;
   }
-  ore_value_ref(v);
 }
 
 ore_value
@@ -253,11 +268,11 @@ ore_define(ore_context* ore, const char* name, ore_value v) {
   int r;
   if (k != kh_end(ore->env)) {
     ore_value old = kh_value(ore->env, k);
-    ore_value_unref(old);
+    ore_value_unref(&old);
   }
   k = kh_put(ident, ore->env, name, &r);
+  ore_value_ref(&v);
   kh_value(ore->env, k) = v;
-  ore_value_ref(v);
 }
 
 ore_value
@@ -291,12 +306,11 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
         int i;
         
         ore_context* env = ore_new(ore);
-        mpc_ast_t* cs = fn.v.f.x.o;
-        if (cs) {
-          for (i = 0; i < cs->children_num; i++) {
-            ore_eval(env, cs->children[i]);
-          }
+        v = ore_eval(env, fn.v.f.x.o);
+        if (ore->err != ORE_ERROR_EXCEPTION) {
+          ore->err = ORE_ERROR_NONE;
         }
+        *kl_pushp(ident, ore->unnamed) = v;
         ore_destroy(env);
       }
       break;
@@ -365,7 +379,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     for (i = 3; i < t->children_num; i++) {
       if (is_a(t->children[i], "ident"))
         num_in++;
-      else if (is_a(t->children[i], "stmts"))
+      else if (stmts == NULL && !is_a(t->children[i], "char"))
         stmts = t->children[i];
     }
     v.v.f.num_in = num_in;
@@ -380,7 +394,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     for (i = 3; i < t->children_num; i++) {
       if (is_a(t->children[i], "ident"))
         num_in++;
-      else if (is_a(t->children[i], "stmts"))
+      else if (stmts == NULL && !is_a(t->children[i], "char"))
         stmts = t->children[i];
     }
     v.v.f.num_in = num_in;
@@ -390,9 +404,19 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   if (is_a(t, "call")) {
     return ore_call(ore, t);
   }
+  if (is_a(t, "return")) {
+    ore_value v = ore_eval(ore, t->children[1]);
+    ore->err = ORE_ERROR_RETURN;
+    ore_value_ref(&v);
+    return v;
+  }
   if (is_a(t, "stmts") || t->tag[0] == '>') {
+    ore_value v;
     for (i = 0; i < t->children_num; i++) {
-      ore_eval(ore, t->children[i]);
+      v = ore_eval(ore, t->children[i]);
+      if (ore->err != ORE_ERROR_NONE) {
+        return v;
+      }
     }
     return ore_value_nil();
   }
@@ -410,6 +434,8 @@ ore_context*
 ore_new(ore_context* parent) {
   ore_context* ore = (ore_context*) malloc(sizeof(ore_context));
   ore->env = kh_init(ident);
+  ore->unnamed = kl_init(ident);
+  ore->err = ORE_ERROR_NONE;
   ore->parent = parent;
   return ore;
 }
@@ -417,7 +443,8 @@ ore_new(ore_context* parent) {
 void
 ore_destroy(ore_context* ore) {
   ore_value v;
-  kh_foreach_value(ore->env, v, ore_value_unref(v));
+  kh_foreach_value(ore->env, v, ore_value_unref(&v));
+  kl_destroy(ident, ore->unnamed);
 }
 
 int main(int argc, char **argv) {
@@ -445,7 +472,7 @@ int main(int argc, char **argv) {
 
   mpc_err_t* err = mpca_lang(MPC_LANG_DEFAULT, STRUCTURE,
       Number, Factor, String, Ident,
-      Term, Lexp, Let, Vararg, Lambda, Func, Call, Comment, Eof,
+      Term, Lexp, Let, Vararg, Lambda, Func, Call, Return, Comment, Eof,
       Stmt, Stmts, Program);
   if (err != NULL) {
     mpc_err_print(err);
@@ -460,7 +487,7 @@ int main(int argc, char **argv) {
     goto leave;
   }
 
-  mpc_ast_print(result.output);
+  //mpc_ast_print(result.output);
 
   ore_context* ore = ore_new(NULL);
   ore_define_cfunc(ore, "println", -1, ore_println);
