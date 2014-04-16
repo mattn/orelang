@@ -177,15 +177,28 @@ ore_parse_str(ore_context* ore, const char* s) {
 }
 
 ore_value
-ore_strlen(ore_context* ore, int num_in, ore_value* args) {
-  if (args[0].t != ORE_TYPE_STR) {
-    fprintf(stderr, "Argument should be string\n");
-    ore->err = ORE_ERROR_EXCEPTION;
-    return ore_value_nil();
-  }
+ore_len(ore_context* ore, int num_in, ore_value* args) {
   ore_value v = { ORE_TYPE_INT };
-  v.v.i = strlen(args[0].v.s);
-  return v;
+  switch (args[0].t) {
+    case ORE_TYPE_STR:
+      v.v.i = strlen(args[0].v.s);
+      return v;
+    case ORE_TYPE_ARRAY:
+      {
+        klist_t(ident)* a = (klist_t(ident)*) args[0].v.a;
+        kliter_t(ident)* k;
+        kliter_t(ident)* b = kl_begin(a);
+        int n = 0;
+        for (k = b; k != kl_end(a); k = kl_next(k)) n++;
+        v.v.i = n;
+      }
+      return v;
+    default:
+      break;
+  }
+  fprintf(stderr, "Argument should be string or array\n");
+  ore->err = ORE_ERROR_EXCEPTION;
+  return ore_value_nil();
 }
 
 const char*
@@ -782,26 +795,22 @@ int main(int argc, char **argv) {
   }
 
   mpc_result_t result;
+  ore_context* ore = ore_new(NULL);
+  ore_define_cfunc(ore, "print", -1, ore_print);
+  ore_define_cfunc(ore, "println", -1, ore_println);
+  ore_define_cfunc(ore, "len", 1, ore_len);
   if (f > 0) {
     if (!mpc_parse_contents(argv[f], Program, &result)) {
       mpc_err_print(result.error);
       mpc_err_delete(result.error);
-      goto leave;
+    } else {
+      if (verbose)
+        mpc_ast_print(result.output);
+      ore_eval(ore, result.output);
+      mpc_ast_delete(result.output);
     }
-    if (verbose)
-      mpc_ast_print(result.output);
-    ore_context* ore = ore_new(NULL);
-    ore_define_cfunc(ore, "println", -1, ore_println);
-    ore_define_cfunc(ore, "strlen", 1, ore_strlen);
-    ore_eval(ore, result.output);
-    ore_destroy(ore);
-    mpc_ast_delete(result.output);
   } else {
     char buf[BUFSIZ];
-    ore_context* ore = ore_new(NULL);
-    ore_define_cfunc(ore, "println", -1, ore_println);
-    ore_define_cfunc(ore, "strlen", 1, ore_strlen);
-
     mpc_ast_t* root = mpc_ast_new(">", "");
     while (1) {
       printf("> ");
@@ -819,8 +828,8 @@ int main(int argc, char **argv) {
       mpc_ast_add_child(root, result.output);
     }
     mpc_ast_delete(root);
-    ore_destroy(ore);
   }
+  ore_destroy(ore);
 
 leave:
   mpc_cleanup(24,
