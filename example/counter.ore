@@ -1,0 +1,11 @@
+#!ore
+count = (func() {
+  var a = 0;
+  return func() {
+    a = a + 1;
+    return a;
+  };
+})();
+
+println(count());
+println(count());
