@@ -10,18 +10,19 @@
 "          | <string>                                                   \n" \
 "          | <array>                                                    \n" \
 "          | <hash>                                                     \n" \
-"          | <lambda>                                                   \n" \
-"          | <call>                                                     \n" \
 "          | <ident> ;                                                  \n" \
 "string    : /\"[^\"]*\"/ ;                                             \n" \
-"item      : <factor> '[' <factor> ']' ;                                \n" \
+"item      : <factor> '[' <lexp> ']' ;                                  \n" \
+"call      : <ident> '(' <lexp>? (',' <lexp>)* ')' ;                    \n" \
+"anoncall  : <factor> '(' <lexp>? (',' <lexp>)* ')' ;                   \n" \
 "array     : '[' <lexp>? (',' <lexp>)* ']' ;                            \n" \
 "pair      : <string> ':' <lexp> ;                                      \n" \
 "hash      : '{' <pair>? (',' <pair>)* '}' ;                            \n" \
 "ident     : /[a-zA-Z][a-zA-Z0-9_]*/ ;                                  \n" \
 "                                                                       \n" \
-"term      : <factor> (('*' | '/' | '%') <factor>)* ;                   \n" \
-"lexp      : (<item> | <term> (('+' | '-') <term>)*);                   \n" \
+"term      : (<lambda> | <item> | <call> | <anoncall>                                " \
+"        | <factor> (('*' | '/' | '%') <factor>)*) ;                    \n" \
+"lexp      : <term> (('+' | '-') <term>)* ;                             \n" \
 "let_v     : <ident> '=' <lexp> ';' ;                                   \n" \
 "let_a     : <item> '=' <lexp> ';' ;                                    \n" \
 "var       : \"var\" <ident> '=' <lexp> ';' ;                           \n" \
@@ -33,7 +34,6 @@
 "func      : \"func\" <ident>                                             " \
 "        '(' <ident>? (<vararg> | (',' <ident>)*) ')' '{' <stmts> '}' ; \n" \
 "                                                                       \n" \
-"call      : <ident> '(' <lexp>? (',' <lexp>)* ')' ;                    \n" \
 "return    : \"return\" <lexp> ';' ;                                    \n" \
 "comment   : /#[^\n]*/ ;                                                \n" \
 "eof       : /$/ ;                                                      \n" \
@@ -758,35 +758,36 @@ int main(int argc, char **argv) {
     exit(1);
   }
 
-  mpc_parser_t* Number  = mpc_new("number");
-  mpc_parser_t* Factor  = mpc_new("factor");
-  mpc_parser_t* String  = mpc_new("string");
-  mpc_parser_t* Array   = mpc_new("array");
-  mpc_parser_t* Pair    = mpc_new("pair");
-  mpc_parser_t* Hash    = mpc_new("hash");
-  mpc_parser_t* Ident   = mpc_new("ident");
-  mpc_parser_t* Term    = mpc_new("term");
-  mpc_parser_t* Lexp    = mpc_new("lexp");
-  mpc_parser_t* LetV    = mpc_new("let_v");
-  mpc_parser_t* Value   = mpc_new("value");
-  mpc_parser_t* Item    = mpc_new("item");
-  mpc_parser_t* LetA    = mpc_new("let_a");
-  mpc_parser_t* Var     = mpc_new("var");
-  mpc_parser_t* Vararg  = mpc_new("vararg");
-  mpc_parser_t* Func    = mpc_new("func");
-  mpc_parser_t* Lambda  = mpc_new("lambda");
-  mpc_parser_t* Call    = mpc_new("call");
-  mpc_parser_t* Return  = mpc_new("return");
-  mpc_parser_t* Comment = mpc_new("comment");
-  mpc_parser_t* Eof     = mpc_new("eof");
-  mpc_parser_t* Stmt    = mpc_new("stmt");
-  mpc_parser_t* Stmts   = mpc_new("stmts");
-  mpc_parser_t* Program = mpc_new("program");
+  mpc_parser_t* Number   = mpc_new("number");
+  mpc_parser_t* Factor   = mpc_new("factor");
+  mpc_parser_t* String   = mpc_new("string");
+  mpc_parser_t* Array    = mpc_new("array");
+  mpc_parser_t* Pair     = mpc_new("pair");
+  mpc_parser_t* Hash     = mpc_new("hash");
+  mpc_parser_t* Ident    = mpc_new("ident");
+  mpc_parser_t* Term     = mpc_new("term");
+  mpc_parser_t* Lexp     = mpc_new("lexp");
+  mpc_parser_t* LetV     = mpc_new("let_v");
+  mpc_parser_t* Value    = mpc_new("value");
+  mpc_parser_t* Item     = mpc_new("item");
+  mpc_parser_t* LetA     = mpc_new("let_a");
+  mpc_parser_t* Var      = mpc_new("var");
+  mpc_parser_t* Vararg   = mpc_new("vararg");
+  mpc_parser_t* Func     = mpc_new("func");
+  mpc_parser_t* Lambda   = mpc_new("lambda");
+  mpc_parser_t* Call     = mpc_new("call");
+  mpc_parser_t* Anoncall = mpc_new("anoncall");
+  mpc_parser_t* Return   = mpc_new("return");
+  mpc_parser_t* Comment  = mpc_new("comment");
+  mpc_parser_t* Eof      = mpc_new("eof");
+  mpc_parser_t* Stmt     = mpc_new("stmt");
+  mpc_parser_t* Stmts    = mpc_new("stmts");
+  mpc_parser_t* Program  = mpc_new("program");
 
   mpc_err_t* err = mpca_lang(MPC_LANG_DEFAULT, STRUCTURE,
       Number, Factor, String, Array, Pair, Hash, Ident,
       Term, Lexp, LetV, Value, Item, LetA, Var, Vararg,
-      Lambda, Func, Call, Return, Comment, Eof,
+      Lambda, Func, Call, Anoncall, Return, Comment, Eof,
       Stmt, Stmts, Program);
   if (err != NULL) {
     mpc_err_print(err);
@@ -832,10 +833,10 @@ int main(int argc, char **argv) {
   ore_destroy(ore);
 
 leave:
-  mpc_cleanup(24,
+  mpc_cleanup(25,
       Number, Factor, String, Array, Pair, Hash, Ident,
       Term, Lexp, LetV, Value, Item, LetA, Var, Vararg,
-      Lambda, Func, Call, Return, Comment, Eof,
+      Lambda, Func, Call, Anoncall, Return, Comment, Eof,
       Stmt, Stmts, Program);
   return 0;
 }
