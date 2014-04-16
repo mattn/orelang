@@ -64,7 +64,7 @@ typedef enum {
   ORE_ERROR_CONTINUE,
 } ore_error;
 
-typedef mpc_ast_t* ore_func;
+typedef mpc_ast_t* ore_func_ast;
 
 typedef struct _ore_string {
   char* p;
@@ -82,6 +82,15 @@ typedef struct _ore_hash {
   int ref;
 } ore_hash;
 
+typedef struct _ore_func {
+  void* ore;
+  int num_in;
+  union {
+    void* c;
+    ore_func_ast o;
+  } x;
+} ore_func;
+
 typedef struct _ore_value {
   ore_type t;
   union {
@@ -90,14 +99,7 @@ typedef struct _ore_value {
     ore_string* s;
     ore_array* a;
     ore_hash* h;
-    struct {
-      void* env;
-      int num_in;
-      union {
-        void* c;
-        ore_func o;
-      } x;
-    } f;
+    ore_func f;
   } v;
 } ore_value;
 
@@ -331,6 +333,7 @@ ore_kind(ore_value v) {
   }
   return "unknown";
 }
+
 ore_value
 ore_print(ore_context* ore, int num_in, ore_value* args) {
   int i;
@@ -397,12 +400,40 @@ ore_print(ore_context* ore, int num_in, ore_value* args) {
         break;
     }
   }
+  return ore_value_nil();
 }
 
 ore_value
 ore_println(ore_context* ore, int num_in, ore_value* args) {
   ore_print(ore, num_in, args);
   printf("\n");
+  return ore_value_nil();
+}
+
+ore_value
+ore_dump_env(ore_context* ore, int num_in, ore_value* args) {
+  int i, level = 0;
+  while (ore) {
+    for (i = 0; i < level; i++) printf(" ");
+    khash_t(value)* h = (khash_t(value)*) ore->env;
+    khiter_t k, b = kh_begin(h);
+    int n = 0;
+    printf("%p : {", ore->env);
+    for (k = b; k != kh_end(h); k++) {
+      if (!kh_exist(h, k)) continue;						\
+      if (n > 0) {
+        printf(",");
+      }
+      const char* key = kh_key(h, k);
+      printf("%s: ", key);
+      ore_value pa[] = { kh_val(h, k) };
+      ore_print(ore, 1, pa);
+      n++;
+    }
+    printf("}\n");
+    ore = ore->parent;
+    level++;
+  }
   return ore_value_nil();
 }
 
@@ -425,6 +456,7 @@ ore_get(ore_context* ore, const char* name) {
     p = p->parent;
   }
   fprintf(stderr, "Unknown identifier '%s'\n", name);
+  ore_dump_env(ore, 0, NULL);
   ore->err = ORE_ERROR_EXCEPTION;
   return ore_value_nil();
 }
@@ -433,12 +465,22 @@ void
 ore_set(ore_context* ore, const char* name, ore_value v) {
   khint_t k;
   int r;
+  ore_value old = ore_value_nil();
   while (ore) {
     k = kh_get(value, ore->env, name);
-    if (k != kh_end(ore->env) || ore->parent == NULL) {
-      ore_value old = kh_value(ore->env, k);
-      ore_value_unref(old);
+    if (k != kh_end(ore->env)) {
+      old = kh_value(ore->env, k);
       ore_value_ref(v);
+      ore_value_unref(old);
+      k = kh_put(value, ore->env, name, &r);
+      kh_value(ore->env, k) = v;
+      return;
+    }
+    if (ore->parent == NULL) {
+      if (k != kh_end(ore->env)) 
+        old = kh_value(ore->env, k);
+      ore_value_ref(v);
+      ore_value_unref(old);
       k = kh_put(value, ore->env, name, &r);
       kh_value(ore->env, k) = v;
       return;
@@ -449,23 +491,22 @@ ore_set(ore_context* ore, const char* name, ore_value v) {
 
 ore_value
 ore_define(ore_context* ore, const char* name, ore_value v) {
-  khint_t k = kh_get(value, ore->env, name);
   int r;
-  if (k != kh_end(ore->env)) {
-    ore_value old = kh_value(ore->env, k);
-    ore_value_unref(old);
-  }
+  ore_value old = ore_value_nil();
+  khint_t k = kh_get(value, ore->env, name);
+  if (k != kh_end(ore->env))
+    old = kh_value(ore->env, k);
   k = kh_put(value, ore->env, name, &r);
   ore_value_ref(v);
   kh_value(ore->env, k) = v;
+  ore_value_unref(old);
 }
 
 void
 ore_define_cfunc(ore_context* ore, const char* name, int num_in, ore_cfunc_t c) {
-  int r = 0;
-  khint_t k = kh_put(value, ore->env, name, &r);
+  int r;
   ore_value v = { ORE_TYPE_CFUNC };
-  v.v.f.env = ore;
+  v.v.f.ore = ore;
   v.v.f.num_in = num_in;
   v.v.f.x.c = c;
   ore_define(ore, name, v);
@@ -501,7 +542,8 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
         for (i = 2; i < t->children_num - 1; i += 2) {
           args[n++] = ore_eval(ore, t->children[i]);
         }
-        v = ((ore_cfunc_t)fn.v.f.x.c) ((ore_context*) fn.v.f.env, num_in, args);
+        //v = ((ore_cfunc_t)fn.v.f.x.c) ((ore_context*) fn.v.f.ore, num_in, args);
+        v = ((ore_cfunc_t)fn.v.f.x.c) ((ore_context*) ore, num_in, args);
         free(args);
       }
       break;
@@ -519,7 +561,7 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
           args[n++] = ore_eval(ore, t->children[i]);
         }
 
-        ore_context* env = ore_new((ore_context*) fn.v.f.env);
+        ore_context* env = ore_new((ore_context*) fn.v.f.ore);
         mpc_ast_t* stmts = NULL;
         mpc_ast_t* f = fn.v.f.x.o;
         n = 0;
@@ -549,9 +591,10 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
         }
         if (stmts) {
           v = ore_eval(env, stmts);
-          if (ore->err != ORE_ERROR_EXCEPTION)
-            ore->err = ORE_ERROR_NONE;
+          if (env->err == ORE_ERROR_EXCEPTION)
+            ore->err = env->err;
           *kl_pushp(value, ore->unnamed) = v;
+          *kl_pushp(value, ore->unnamed) = ore_value_hash_from_khash(env->env);
         }
         free(args);
         ore_destroy(env);
@@ -619,8 +662,8 @@ ore_value* ore_index_ref(ore_context* ore, ore_value v, ore_value e, int update)
 ore_value
 ore_eval(ore_context* ore, mpc_ast_t* t) {
   int i, r;
-  if (verbose)
-    printf("tag: %s\n", t->tag);
+  //if (verbose)
+    //printf("tag: %s\n", t->tag);
   if (is_a(t, "eof") || is_a(t, "comment")) {
     return ore_value_nil();
   }
@@ -750,7 +793,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   }
   if (is_a(t, "func")) {
     ore_value v = { ORE_TYPE_FUNC };
-    v.v.f.env = ore;
+    v.v.f.ore = ore;
     v.v.f.num_in = -1;
     v.v.f.x.o = t;
     ore_set(ore, t->children[1]->contents, v);
@@ -758,7 +801,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   }
   if (is_a(t, "lambda")) {
     ore_value v = { ORE_TYPE_FUNC };
-    v.v.f.env = ore;
+    v.v.f.ore = ore;
     v.v.f.num_in = -1;
     v.v.f.x.o = t;
     return v;
@@ -807,7 +850,6 @@ void
 ore_destroy(ore_context* ore) {
   ore_value v;
   kh_foreach_value(ore->env, v, ore_value_unref(v));
-  kh_destroy(value, ore->env);
   kl_destroy(value, ore->unnamed);
 }
 
@@ -879,6 +921,7 @@ int main(int argc, char **argv) {
 
   mpc_result_t result;
   ore_context* ore = ore_new(NULL);
+  ore_define_cfunc(ore, "dump_env", 0, ore_dump_env);
   ore_define_cfunc(ore, "print", -1, ore_print);
   ore_define_cfunc(ore, "println", -1, ore_println);
   ore_define_cfunc(ore, "len", 1, ore_len);
