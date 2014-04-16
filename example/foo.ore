@@ -17,7 +17,7 @@ foo();
 c = func(){
   println("lambda");
 };
-println(strlen("foo"));
+println(len("foo"));
 
 # λ関数呼出
 c();
