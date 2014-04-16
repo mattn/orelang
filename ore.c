@@ -8,10 +8,15 @@
 "factor    : '(' <lexp> ')'                                             \n" \
 "          | <number>                                                   \n" \
 "          | <string>                                                   \n" \
+"          | <array>                                                    \n" \
+"          | <hash>                                                     \n" \
 "          | <lambda>                                                   \n" \
 "          | <call>                                                     \n" \
 "          | <ident> ;                                                  \n" \
 "string    : /\"[^\"]*\"/ ;                                             \n" \
+"array     : '[' <lexp>? (',' <lexp>)* ']' ;                            \n" \
+"pair      : <string> ':' <lexp> ;                                      \n" \
+"hash      : '{' <pair>? (',' <pair>)* '}' ;                            \n" \
 "ident     : /[a-zA-Z][a-zA-Z0-9_]*/ ;                                  \n" \
 "                                                                       \n" \
 "term      : <factor> (('*' | '/' | '%') <factor>)* ;                   \n" \
@@ -43,6 +48,8 @@ typedef enum {
   ORE_TYPE_INT,
   ORE_TYPE_FLOAT,
   ORE_TYPE_STR,
+  ORE_TYPE_ARRAY,
+  ORE_TYPE_HASH,
   ORE_TYPE_FUNC,
   ORE_TYPE_CFUNC
 } ore_type;
@@ -63,6 +70,8 @@ typedef struct _ore_value {
     int i;
     double d;
     char* s;
+    void* a;
+    void* h;
     struct {
       void* env;
       int num_in;
@@ -178,34 +187,76 @@ ore_strlen(ore_context* ore, int num_in, ore_value* args) {
 }
 
 ore_value
-ore_println(ore_context* ore, int num_in, ore_value* args) {
+ore_print(ore_context* ore, int num_in, ore_value* args) {
   int i;
   for (i = 0; i < num_in; i++) {
     if (i != 0) printf(", ");
-    switch (args[i].t) {
+    ore_value v = args[i];
+    switch (v.t) {
       case ORE_TYPE_NIL:
         printf("nil");
         break;
       case ORE_TYPE_INT:
-        printf("%d", args[i].v.i);
+        printf("%d", v.v.i);
         break;
       case ORE_TYPE_FLOAT:
-        printf("%f", args[i].v.d);
+        printf("%f", v.v.d);
         break;
       case ORE_TYPE_STR:
-        printf("%s", args[i].v.s);
+        printf("%s", v.v.s);
+        break;
+      case ORE_TYPE_ARRAY:
+        {
+          klist_t(ident)* a = (klist_t(ident)*) v.v.a;
+          kliter_t(ident)* k;
+          kliter_t(ident)* b = kl_begin(a);
+          printf("[");
+          for (k = b; k != kl_end(a); k = kl_next(k)) {
+            if (k != b) {
+              printf(",");
+            }
+            ore_value pa[] = { kl_val(k) };
+            ore_print(ore, 1, pa);
+          }
+          printf("]");
+        }
+        break;
+      case ORE_TYPE_HASH:
+        {
+          khash_t(ident)* h = (khash_t(ident)*) v.v.h;
+          khiter_t k, b = kh_begin(h);
+          int n = 0;
+          printf("{");
+          for (k = b; k != kh_end(h); k++) {
+		    if (!kh_exist(h, k)) continue;						\
+            if (n > 0) {
+              printf(",");
+            }
+            const char* key = kh_key(h, k);
+            printf("%s: ", key);
+            ore_value pa[] = { kh_val(h, k) };
+            ore_print(ore, 1, pa);
+            n++;
+          }
+          printf("}");
+        }
         break;
       case ORE_TYPE_FUNC:
-        printf("<func-0x%p>", args[i].v.f.x.o);
+        printf("<func-0x%p>", v.v.f.x.o);
         break;
       case ORE_TYPE_CFUNC:
-        printf("<func-0x%p>", args[i].v.f.x.c);
+        printf("<func-0x%p>", v.v.f.x.c);
         break;
       default:
         printf("<unknown>");
         break;
     }
   }
+}
+
+ore_value
+ore_println(ore_context* ore, int num_in, ore_value* args) {
+  ore_print(ore, num_in, args);
   printf("\n");
   return ore_value_nil();
 }
@@ -346,10 +397,16 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
         mpc_ast_t* stmts = NULL;
         mpc_ast_t* f = fn.v.f.x.o;
         n = 0;
+        int vararg = 0;
         for (i = 2; i < f->children_num; i++) {
-          if (is_a(f->children[i], "char") && f->children[i]->contents[0] == '{') {
-            i++;
-            break;
+          if (is_a(f->children[i], "char")) {
+            if (!strcmp(f->children[i]->contents, "...")) {
+              vararg = 1;
+            }
+            if (f->children[i]->contents[0] == '{') {
+              i++;
+              break;
+            }
           }
         }
         for (; i < f->children_num; i++) {
@@ -377,7 +434,6 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
 ore_value
 ore_eval(ore_context* ore, mpc_ast_t* t) {
   int i, r;
-  ore_value v;
   if (is_a(t, "eof") || is_a(t, "comment")) {
     return ore_value_nil();
   }
@@ -387,6 +443,28 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   if (is_a(t, "string")) {
     return ore_parse_str(ore, t->contents);
   }
+  if (is_a(t, "array")) {
+    ore_value v = { ORE_TYPE_ARRAY };
+    klist_t(ident)* a = kl_init(ident);
+    v.v.a = a;
+    for (i = 1; i < t->children_num - 1; i += 2) {
+      ore_value e = ore_eval(ore, t->children[i]);
+      *kl_pushp(ident, a) = e;
+    }
+    return v;
+  }
+  if (is_a(t, "hash")) {
+    ore_value v = { ORE_TYPE_HASH };
+    khash_t(ident)* h = kh_init(ident);
+    v.v.h = h;
+    for (i = 1; i < t->children_num - 1; i += 2) {
+      ore_value key = ore_eval(ore, t->children[i]->children[0]);
+      ore_value val = ore_eval(ore, t->children[i]->children[2]);
+      khint_t k = kh_put(ident, h, key.v.s, &r);
+      kh_value(h, k) = val;
+    }
+    return v;
+  }
   if (is_a(t, "ident")) {
     return ore_get(ore, t->contents);
   }
@@ -394,7 +472,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     return ore_eval(ore, t->children[1]);
   }
   if (is_a(t, "lexp") || is_a(t, "term")) {
-    v = ore_eval(ore, t->children[0]);
+    ore_value v = ore_eval(ore, t->children[0]);
     for (i = 1; i < t->children_num; i += 2) {
       char* op = t->children[i]->contents;
       ore_value rhs = ore_eval(ore, t->children[i+1]);
@@ -540,6 +618,9 @@ int main(int argc, char **argv) {
   mpc_parser_t* Number  = mpc_new("number");
   mpc_parser_t* Factor  = mpc_new("factor");
   mpc_parser_t* String  = mpc_new("string");
+  mpc_parser_t* Array   = mpc_new("array");
+  mpc_parser_t* Pair    = mpc_new("pair");
+  mpc_parser_t* Hash    = mpc_new("hash");
   mpc_parser_t* Ident   = mpc_new("ident");
   mpc_parser_t* Term    = mpc_new("term");
   mpc_parser_t* Lexp    = mpc_new("lexp");
@@ -557,7 +638,7 @@ int main(int argc, char **argv) {
   mpc_parser_t* Program = mpc_new("program");
 
   mpc_err_t* err = mpca_lang(MPC_LANG_DEFAULT, STRUCTURE,
-      Number, Factor, String, Ident,
+      Number, Factor, String, Array, Pair, Hash, Ident,
       Term, Lexp, Let, Var, Vararg, Lambda, Func, Call, Return, Comment, Eof,
       Stmt, Stmts, Program);
   if (err != NULL) {
@@ -586,8 +667,8 @@ int main(int argc, char **argv) {
   mpc_ast_delete(result.output);
 
 leave:
-  mpc_cleanup(15,
-      Number, Factor, String, Ident,
+  mpc_cleanup(17,
+      Number, Factor, String, Array, Pair, Hash, Ident,
       Term, Lexp, Let, Var, Vararg, Lambda, Func, Call, Return, Comment, Eof,
       Stmt, Stmts, Program);
   return 0;
