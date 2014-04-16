@@ -1,0 +1,5 @@
+#!ore
+func foo(x...) {
+  println(x);
+}
+foo(1);
