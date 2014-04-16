@@ -213,6 +213,22 @@ ore_value_nil() {
 }
 
 int
+ore_is_same_ref(ore_value lhs, ore_value rhs) {
+  switch (lhs.t) {
+    case ORE_TYPE_STR:
+      if (rhs.t != ORE_TYPE_STR) return 0;
+      return lhs.v.s->p == rhs.v.s->p;
+    case ORE_TYPE_ARRAY:
+      if (rhs.t != ORE_TYPE_ARRAY) return 0;
+      return lhs.v.a->p == rhs.v.a->p;
+    case ORE_TYPE_HASH:
+      if (rhs.t != ORE_TYPE_HASH) return 0;
+      return lhs.v.h->p == rhs.v.h->p;
+  }
+  return 0;
+}
+
+int
 ore_is_nil(ore_value v) {
   return v.t == ORE_TYPE_NIL;
 }
@@ -791,6 +807,7 @@ void
 ore_destroy(ore_context* ore) {
   ore_value v;
   kh_foreach_value(ore->env, v, ore_value_unref(v));
+  kh_destroy(value, ore->env);
   kl_destroy(value, ore->unnamed);
 }
 
