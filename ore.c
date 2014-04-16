@@ -573,7 +573,9 @@ int main(int argc, char **argv) {
     goto leave;
   }
 
+#ifdef DEBUG
   mpc_ast_print(result.output);
+#endif
 
   ore_context* ore = ore_new(NULL);
   ore_define_cfunc(ore, "println", -1, ore_println);
