@@ -107,13 +107,14 @@ ore_value ore_eval(ore_context*, mpc_ast_t*);
 ore_context* ore_new(ore_context*);
 void ore_destroy(ore_context*);
 
+int verbose = 0;
+
 void
 ore_value_real_free(ore_value* v) {
   switch (v->t) {
     case ORE_TYPE_STR:
-#ifdef DEBUG
-      printf("free %d, %p, %s\n", v->ref, v->v.s, v->v.s);
-#endif
+      if (verbose)
+        printf("free %d, %p, %s\n", v->ref, v->v.s, v->v.s);
       free(v->v.s);
       v->v.s = NULL;
       break;
@@ -122,7 +123,6 @@ ore_value_real_free(ore_value* v) {
   }
   v->t = ORE_TYPE_NIL;
 }
-
 
 void
 ore_value_free(void *p) {
@@ -515,6 +515,8 @@ ore_value* ore_index_ref(ore_context* ore, ore_value v, ore_value e, int update)
 ore_value
 ore_eval(ore_context* ore, mpc_ast_t* t) {
   int i, r;
+  if (verbose)
+    printf("tag: %s\n", t->tag);
   if (is_a(t, "eof") || is_a(t, "comment")) {
     return ore_value_nil();
   }
@@ -714,11 +716,35 @@ ore_destroy(ore_context* ore) {
   kl_destroy(ident, ore->unnamed);
 }
 
-int main(int argc, char **argv) {
-  if (argc != 2) {
-    fprintf(stderr, "usage of %s: file\n", argv[0]);
-    exit(0);
+int
+parse_args(int argc, char **argv) {
+  int i;
+  for (i = 1; i < argc; i++) {
+    if (argv[i][0] != '-') break;
+    switch (argv[i][1]) {
+    case 'v':
+      verbose = 1;
+      break;
+    default:
+      return -1;
+    }
   }
+  if (i == argc) return 0;
+  return i;
+}
+
+void
+usage(char* prog) {
+  fprintf(stderr, "usage of %s: file\n", prog);
+}
+
+int main(int argc, char **argv) {
+  int f = parse_args(argc, argv);
+  if (f < 0) {
+    usage(argv[0]);
+    exit(1);
+  }
+
   mpc_parser_t* Number  = mpc_new("number");
   mpc_parser_t* Factor  = mpc_new("factor");
   mpc_parser_t* String  = mpc_new("string");
@@ -756,23 +782,45 @@ int main(int argc, char **argv) {
   }
 
   mpc_result_t result;
-  if (!mpc_parse_contents(argv[1], Program, &result)) {
-    mpc_err_print(result.error);
-    mpc_err_delete(result.error);
-    goto leave;
+  if (f > 0) {
+    if (!mpc_parse_contents(argv[f], Program, &result)) {
+      mpc_err_print(result.error);
+      mpc_err_delete(result.error);
+      goto leave;
+    }
+    if (verbose)
+      mpc_ast_print(result.output);
+    ore_context* ore = ore_new(NULL);
+    ore_define_cfunc(ore, "println", -1, ore_println);
+    ore_define_cfunc(ore, "strlen", 1, ore_strlen);
+    ore_eval(ore, result.output);
+    ore_destroy(ore);
+    mpc_ast_delete(result.output);
+  } else {
+    char buf[BUFSIZ];
+    ore_context* ore = ore_new(NULL);
+    ore_define_cfunc(ore, "println", -1, ore_println);
+    ore_define_cfunc(ore, "strlen", 1, ore_strlen);
+
+    mpc_ast_t* root = mpc_ast_new(">", "");
+    while (1) {
+      printf("> ");
+      if (!fgets(buf, sizeof(buf), stdin)) {
+        break;
+      }
+      if (!mpc_parse(argv[0], buf, Stmt, &result)) {
+        mpc_err_print(result.error);
+        mpc_err_delete(result.error);
+        continue;
+      }
+      if (verbose)
+        mpc_ast_print(result.output);
+      ore_eval(ore, result.output);
+      mpc_ast_add_child(root, result.output);
+    }
+    mpc_ast_delete(root);
+    ore_destroy(ore);
   }
-
-#ifdef DEBUG
-  mpc_ast_print(result.output);
-#endif
-
-  ore_context* ore = ore_new(NULL);
-  ore_define_cfunc(ore, "println", -1, ore_println);
-  ore_define_cfunc(ore, "strlen", 1, ore_strlen);
-  ore_eval(ore, result.output);
-  ore_destroy(ore);
-
-  mpc_ast_delete(result.output);
 
 leave:
   mpc_cleanup(24,
