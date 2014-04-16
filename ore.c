@@ -26,6 +26,7 @@
 "        '(' <ident>? (<vararg> | (',' <ident>)*) ')' '{' <stmts> '}' ; \n" \
 "                                                                       \n" \
 "call      : <ident> '(' <lexp>? (',' <lexp>)* ')' ;                    \n" \
+"return    : \"return\" <lexp> ';' ;                                    \n" \
 "comment   : /#[^\n]*/ ;                                                \n" \
 "eof       : /$/ ;                                                      \n" \
 "stmt      : (<let> | (<call> ';') | <func> | <comment>) ;              \n" \
@@ -69,7 +70,6 @@ KLIST_INIT(ident, ore_value, ore_value_free)
 
 typedef struct _ore_context {
   khash_t(ident)* env;
-  klist_t(ident)* gc;
   struct _ore_context* parent;
 } ore_context;
 
@@ -79,6 +79,8 @@ void ore_value_unref(ore_value v);
 
 ore_value ore_call(ore_context*, mpc_ast_t*);
 ore_value ore_eval(ore_context*, mpc_ast_t*);
+ore_context* ore_new(ore_context*);
+void ore_destroy(ore_context*);
 
 void
 ore_value_real_free(ore_value v) {
@@ -97,6 +99,7 @@ ore_value_real_free(ore_value v) {
 void
 ore_value_free(void *p) {
   ore_value* v = (ore_value*) p;
+  printf("FREE %d\n", v->t);
   ore_value_unref(*v);
 }
 
@@ -116,6 +119,11 @@ ore_value
 ore_value_nil() {
   ore_value v = { ORE_TYPE_NIL, 0 };
   return v;
+}
+
+int
+ore_is_nil(ore_value v) {
+  return v.t == ORE_TYPE_NIL;
 }
 
 ore_value
@@ -138,7 +146,6 @@ ore_parse_str(ore_context* ore, const char* s) {
   v.v.s = calloc(1, l + 1);
   strncpy(v.v.s, s + 1, l);
   v.v.s[l] = 0;
-  *kl_pushp(ident, ore->gc) = v;
   return v;
 }
 
@@ -203,14 +210,63 @@ ore_define_cfunc(ore_context* ore, const char* name, int num_in, ore_cfunc_t c) 
 }
 
 ore_value
+ore_get(ore_context* ore, const char* name) {
+  if (!ore)
+    return ore_value_nil();
+  khint_t k;
+  while (ore) {
+    k = kh_get(ident, ore->env, name);
+    if (k != kh_end(ore->env)) {
+      break;
+    }
+    ore = ore->parent;
+  }
+  return kh_value(ore->env, k);
+}
+
+void
+ore_set(ore_context* ore, const char* name, ore_value v) {
+  khint_t k;
+  int r;
+  while (ore) {
+    k = kh_get(ident, ore->env, name);
+    if (k != kh_end(ore->env)) {
+      ore_value old = kh_value(ore->env, k);
+      ore_value_unref(old);
+      k = kh_put(ident, ore->env, name, &r);
+      kh_value(ore->env, k) = v;
+      break;
+    }
+    if (ore->parent == NULL) {
+      k = kh_put(ident, ore->env, name, &r);
+      kh_value(ore->env, k) = v;
+      break;
+    }
+    ore = ore->parent;
+  }
+  ore_value_ref(v);
+}
+
+ore_value
+ore_define(ore_context* ore, const char* name, ore_value v) {
+  khint_t k = kh_get(ident, ore->env, name);
+  int r;
+  if (k != kh_end(ore->env)) {
+    ore_value old = kh_value(ore->env, k);
+    ore_value_unref(old);
+  }
+  k = kh_put(ident, ore->env, name, &r);
+  kh_value(ore->env, k) = v;
+  ore_value_ref(v);
+}
+
+ore_value
 ore_call(ore_context* ore, mpc_ast_t *t) {
-  khint_t k = kh_get(ident, ore->env, t->children[0]->contents);
-  if (k == kh_end(ore->env)) {
+  ore_value fn = ore_get(ore, t->children[0]->contents);
+  if (ore_is_nil(fn)) {
     fprintf(stderr, "Unknown function '%s'\n", t->children[0]->contents);
     return ore_value_nil();
   }
-
-  ore_value fn = kh_value(ore->env, k);
   ore_value v = ore_value_nil();
   switch (fn.t) {
     case ORE_TYPE_CFUNC:
@@ -233,12 +289,15 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
       {
         // TODO: ここをちゃんと実装して引数を渡せる様にする
         int i;
+        
+        ore_context* env = ore_new(ore);
         mpc_ast_t* cs = fn.v.f.x.o;
         if (cs) {
           for (i = 0; i < cs->children_num; i++) {
-            ore_eval(ore, cs->children[i]);
+            ore_eval(env, cs->children[i]);
           }
         }
+        ore_destroy(env);
       }
       break;
   }
@@ -259,11 +318,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     return ore_parse_str(ore, t->contents);
   }
   if (is_a(t, "ident")) {
-    khint_t k = kh_get(ident, ore->env, t->contents);
-    if (k == kh_end(ore->env)) {
-      return ore_value_nil();
-    }
-    return kh_value(ore->env, k);
+    return ore_get(ore, t->contents);
   }
   if (is_a(t, "factor")) {
     return ore_eval(ore, t->children[1]);
@@ -299,16 +354,8 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     return v;
   }
   if (is_a(t, "let")) {
-    khint_t k = kh_get(ident, ore->env, t->children[0]->contents);
-    ore_value v;
-    if (k != kh_end(ore->env)) {
-      v = kh_value(ore->env, k);
-      ore_value_unref(v);
-    }
-    v = ore_eval(ore, t->children[2]);
-    ore_value_ref(v);
-    k = kh_put(ident, ore->env, t->children[0]->contents, &r);
-    kh_value(ore->env, k) = v;
+    ore_value v = ore_eval(ore, t->children[2]);
+    ore_set(ore, t->children[1]->contents, v);
     return v;
   }
   if (is_a(t, "func")) {
@@ -323,8 +370,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     }
     v.v.f.num_in = num_in;
     v.v.f.x.o = stmts;
-    khint_t k = kh_put(ident, ore->env, t->children[1]->contents, &r);
-    kh_value(ore->env, k) = v;
+    ore_set(ore, t->children[1]->contents, v);
     return v;
   }
   if (is_a(t, "lambda")) {
@@ -364,14 +410,14 @@ ore_context*
 ore_new(ore_context* parent) {
   ore_context* ore = (ore_context*) malloc(sizeof(ore_context));
   ore->env = kh_init(ident);
-  ore->gc = kl_init(ident);
   ore->parent = parent;
   return ore;
 }
 
 void
 ore_destroy(ore_context* ore) {
-  kl_destroy(ident, ore->gc);
+  ore_value v;
+  kh_foreach_value(ore->env, v, ore_value_unref(v));
 }
 
 int main(int argc, char **argv) {
@@ -390,6 +436,7 @@ int main(int argc, char **argv) {
   mpc_parser_t* Func    = mpc_new("func");
   mpc_parser_t* Lambda  = mpc_new("lambda");
   mpc_parser_t* Call    = mpc_new("call");
+  mpc_parser_t* Return  = mpc_new("return");
   mpc_parser_t* Comment = mpc_new("comment");
   mpc_parser_t* Eof     = mpc_new("eof");
   mpc_parser_t* Stmt    = mpc_new("stmt");
@@ -424,9 +471,9 @@ int main(int argc, char **argv) {
   mpc_ast_delete(result.output);
 
 leave:
-  mpc_cleanup(13,
+  mpc_cleanup(14,
       Number, Factor, String, Ident,
-      Term, Lexp, Let, Vararg, Lambda, Func, Call, Comment, Eof,
+      Term, Lexp, Let, Vararg, Lambda, Func, Call, Return, Comment, Eof,
       Stmt, Stmts, Program);
   return 0;
 }
