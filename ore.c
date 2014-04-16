@@ -344,6 +344,12 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
         mpc_ast_t* f = fn.v.f.x.o;
         n = 0;
         for (i = 2; i < f->children_num; i++) {
+          if (is_a(f->children[i], "char") && f->children[i]->contents[0] == '{') {
+            i++;
+            break;
+          }
+        }
+        for (; i < f->children_num; i++) {
           if (is_a(f->children[i], "ident")) {
             if (n < num_in)
               ore_define(env, f->children[i]->contents, args[n++]);
