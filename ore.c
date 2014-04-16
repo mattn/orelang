@@ -3,32 +3,35 @@
 #include "klist.h"
 
 #define STRUCTURE \
-"                                                           \n" \
-"number    : /-?[0-9]+(\\.[0-9]*)?(e[0-9]+)?/ ;             \n" \
-"factor    : '(' <lexp> ')'                                 \n" \
-"          | <number>                                       \n" \
-"          | <string>                                       \n" \
-"          | <lambda>                                       \n" \
-"          | <ident> ;                                      \n" \
-"string    : /\"[^\"]*\"/ ;                                 \n" \
-"ident     : /[a-zA-Z][a-zA-Z0-9_]*/ ;                      \n" \
-"                                                           \n" \
-"term      : <factor> (('*' | '/' | '%') <factor>)* ;       \n" \
-"lexp      : <term> (('+' | '-') <term>)* ;                 \n" \
-"let       : <ident> '=' <lexp> ';' ;                       \n" \
-"                                                           \n" \
-"lambda    : /func/                                           " \
-"        '(' <ident>? (',' <ident>)* ')' '{' <stmt>* '}' ;  \n" \
-"func      : /func/ <ident>                                   " \
-"        '(' <ident>? (',' <ident>)* ')' '{' <stmt>* '}' ;  \n" \
-"                                                           \n" \
-"call      : <ident> '(' <lexp>? (',' <lexp>)* ')' ';' ;    \n" \
-"comment   : /#[^\n]*/ ;                                    \n" \
-"eof       : /$/ ;                                          \n" \
-"stmt      : (<let> | <call> | <func> | <comment>) ;        \n" \
-"program   : <stmt>* <eof> ;                                \n"
+"                                                                       \n" \
+"number    : /-?[0-9]+(\\.[0-9]*)?(e[0-9]+)?/ ;                         \n" \
+"factor    : '(' <lexp> ')'                                             \n" \
+"          | <number>                                                   \n" \
+"          | <string>                                                   \n" \
+"          | <lambda>                                                   \n" \
+"          | <call>                                                     \n" \
+"          | <ident> ;                                                  \n" \
+"string    : /\"[^\"]*\"/ ;                                             \n" \
+"ident     : /[a-zA-Z][a-zA-Z0-9_]*/ ;                                  \n" \
+"                                                                       \n" \
+"term      : <factor> (('*' | '/' | '%') <factor>)* ;                   \n" \
+"lexp      : <term> (('+' | '-') <term>)* ;                             \n" \
+"let       : <ident> '=' <lexp> ';' ;                                   \n" \
+"vararg    : \"...\" ;                                                  \n" \
+"stmts     : <stmt>* ;                                                  \n" \
+"                                                                       \n" \
+"lambda    : \"func\"                                                     " \
+"        '(' <ident>? (<vararg> | (',' <ident>)*) ')' '{' <stmts> '}' ; \n" \
+"func      : \"func\" <ident>                                             " \
+"        '(' <ident>? (<vararg> | (',' <ident>)*) ')' '{' <stmts> '}' ; \n" \
+"                                                                       \n" \
+"call      : <ident> '(' <lexp>? (',' <lexp>)* ')' ;                    \n" \
+"comment   : /#[^\n]*/ ;                                                \n" \
+"eof       : /$/ ;                                                      \n" \
+"stmt      : (<let> | (<call> ';') | <func> | <comment>) ;              \n" \
+"program   : <stmts> <eof> ;                                            \n"
 
-void ore_free(void *p);
+void ore_value_free(void* p);
 
 #define is_a(t, a) (strstr(t->tag, a) != NULL)
 
@@ -45,18 +48,24 @@ typedef mpc_ast_t* ore_func;
 
 typedef struct _ore_value {
   ore_type t;
-  union _v {
+  union {
     int i;
     double d;
     char* s;
-    void* c;
-    ore_func f;
+    struct {
+      int num_in;
+      union {
+        void* c;
+        ore_func o;
+      } x;
+    } f;
   } v;
+  int ref;
 } ore_value;
 
 KHASH_MAP_INIT_STR(ident, ore_value)
 
-KLIST_INIT(ident, ore_value, ore_free)
+KLIST_INIT(ident, ore_value, ore_value_free)
 
 typedef struct _ore_context {
   khash_t(ident)* env;
@@ -65,20 +74,41 @@ typedef struct _ore_context {
 } ore_context;
 
 typedef ore_value (*ore_cfunc_t)(ore_context*, int, ore_value*);
+void ore_value_ref(ore_value v);
+void ore_value_unref(ore_value v);
 
 ore_value ore_call(ore_context*, mpc_ast_t*);
 ore_value ore_eval(ore_context*, mpc_ast_t*);
 
 void
-ore_free(void *p) {
-  ore_value* v = (ore_value*) p;
-  switch (v->t) {
+ore_value_real_free(ore_value v) {
+  switch (v.t) {
     case ORE_TYPE_STR:
-      free(v->v.s);
+      free(v.v.s);
+      v.v.s = NULL;
       break;
     case ORE_TYPE_FUNC:
-      free(v->v.c);
       break;
+  }
+  v.t = ORE_TYPE_NIL;
+}
+
+
+void
+ore_value_free(void *p) {
+  ore_value* v = (ore_value*) p;
+  ore_value_unref(*v);
+}
+
+void
+ore_value_ref(ore_value v) {
+  v.ref++;
+}
+
+void
+ore_value_unref(ore_value v) {
+  if (--v.ref <= 0) {
+    ore_value_real_free(v);
   }
 }
 
@@ -113,6 +143,17 @@ ore_parse_str(ore_context* ore, const char* s) {
 }
 
 ore_value
+ore_strlen(ore_context* ore, int num_in, ore_value* args) {
+  if (args[0].t != ORE_TYPE_STR) {
+    fprintf(stderr, "Argument should be string\n");
+    return ore_value_nil();
+  }
+  ore_value v = { ORE_TYPE_INT };
+  v.v.i = strlen(args[0].v.s);
+  return v;
+}
+
+ore_value
 ore_println(ore_context* ore, int num_in, ore_value* args) {
   int i;
   for (i = 0; i < num_in; i++) {
@@ -130,8 +171,14 @@ ore_println(ore_context* ore, int num_in, ore_value* args) {
       case ORE_TYPE_STR:
         printf("%s", args[i].v.s);
         break;
+      case ORE_TYPE_FUNC:
+        printf("<func-0x%p>", args[i].v.f.x.o);
+        break;
+      case ORE_TYPE_CFUNC:
+        printf("<func-0x%p>", args[i].v.f.x.c);
+        break;
       default:
-        printf("<unkonwn>");
+        printf("<unknown>");
         break;
     }
   }
@@ -140,11 +187,17 @@ ore_println(ore_context* ore, int num_in, ore_value* args) {
 }
 
 ore_value
-ore_define_cfunc(ore_context* ore, const char* name, ore_cfunc_t c) {
+ore_p(ore_value v) {
+  ore_println(NULL, 1, &v);
+}
+
+ore_value
+ore_define_cfunc(ore_context* ore, const char* name, int num_in, ore_cfunc_t c) {
   int r = 0;
   khint_t k = kh_put(ident, ore->env, name, &r);
   ore_value v = { ORE_TYPE_CFUNC };
-  v.v.c = c;
+  v.v.f.num_in = num_in;
+  v.v.f.x.c = c;
   kh_value(ore->env, k) = v;
   return v;
 }
@@ -153,7 +206,7 @@ ore_value
 ore_call(ore_context* ore, mpc_ast_t *t) {
   khint_t k = kh_get(ident, ore->env, t->children[0]->contents);
   if (k == kh_end(ore->env)) {
-    fprintf(stderr, "Unknwn function '%s'\n", t->children[0]->contents);
+    fprintf(stderr, "Unknown function '%s'\n", t->children[0]->contents);
     return ore_value_nil();
   }
 
@@ -163,17 +216,30 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
     case ORE_TYPE_CFUNC:
       {
         int num_in = t->children_num / 2 - 1, n = 0, i;
+        if (fn.v.f.num_in != -1 && num_in != fn.v.f.num_in) {
+          fprintf(stderr, "Number of arguments mismatch: %d for %d\n",
+            num_in, fn.v.f.num_in);
+          return ore_value_nil();
+        }
         ore_value* args = (ore_value*) malloc(sizeof(ore_value) * num_in);
-        for (i = 2; i < t->children_num - 2; i += 2) {
+        for (i = 2; i < t->children_num - 1; i += 2) {
           args[n++] = ore_eval(ore, t->children[i]);
         }
-        v = ((ore_cfunc_t)fn.v.c) (ore, num_in, args);
+        v = ((ore_cfunc_t)fn.v.f.x.c) (ore, num_in, args);
         free(args);
       }
       break;
     case ORE_TYPE_FUNC:
-      // TODO: ここをちゃんと実装して引数を渡せる様にする
-      v = ore_eval(ore, fn.v.f);
+      {
+        // TODO: ここをちゃんと実装して引数を渡せる様にする
+        int i;
+        mpc_ast_t* cs = fn.v.f.x.o;
+        if (cs) {
+          for (i = 0; i < cs->children_num; i++) {
+            ore_eval(ore, cs->children[i]);
+          }
+        }
+      }
       break;
   }
   return v;
@@ -233,33 +299,64 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     return v;
   }
   if (is_a(t, "let")) {
-    khint_t k = kh_put(ident, ore->env, t->children[0]->contents, &r);
+    khint_t k = kh_get(ident, ore->env, t->children[0]->contents);
+    ore_value v;
+    if (k != kh_end(ore->env)) {
+      v = kh_value(ore->env, k);
+      ore_value_unref(v);
+    }
     v = ore_eval(ore, t->children[2]);
+    ore_value_ref(v);
+    k = kh_put(ident, ore->env, t->children[0]->contents, &r);
     kh_value(ore->env, k) = v;
     return v;
   }
   if (is_a(t, "func")) {
     ore_value v = { ORE_TYPE_FUNC };
-    v.v.f = t->children[5];
+    int i, num_in = 0;
+    mpc_ast_t* stmts = NULL;
+    for (i = 3; i < t->children_num; i++) {
+      if (is_a(t->children[i], "ident"))
+        num_in++;
+      else if (is_a(t->children[i], "stmts"))
+        stmts = t->children[i];
+    }
+    v.v.f.num_in = num_in;
+    v.v.f.x.o = stmts;
     khint_t k = kh_put(ident, ore->env, t->children[1]->contents, &r);
     kh_value(ore->env, k) = v;
     return v;
   }
   if (is_a(t, "lambda")) {
     ore_value v = { ORE_TYPE_FUNC };
-    v.v.f = t->children[4];
+    int i, num_in = 0;
+    mpc_ast_t* stmts = NULL;
+    for (i = 3; i < t->children_num; i++) {
+      if (is_a(t->children[i], "ident"))
+        num_in++;
+      else if (is_a(t->children[i], "stmts"))
+        stmts = t->children[i];
+    }
+    v.v.f.num_in = num_in;
+    v.v.f.x.o = stmts;
     return v;
   }
   if (is_a(t, "call")) {
     return ore_call(ore, t);
   }
-  if (t->tag[0] == '>') {
+  if (is_a(t, "stmts") || t->tag[0] == '>') {
     for (i = 0; i < t->children_num; i++) {
       ore_eval(ore, t->children[i]);
     }
     return ore_value_nil();
   }
-  fprintf(stderr, "Unknwn operation '%s'\n", t->tag);
+  if (is_a(t, "stmt")) {
+    return ore_eval(ore, t->children[0]);
+  }
+  if (is_a(t, "char") && !strcmp(t->contents, ";")) {
+    return ore_value_nil();
+  }
+  fprintf(stderr, "Unknown operation '%s'\n", t->tag);
   return ore_value_nil();
 }
 
@@ -289,18 +386,20 @@ int main(int argc, char **argv) {
   mpc_parser_t* Term    = mpc_new("term");
   mpc_parser_t* Lexp    = mpc_new("lexp");
   mpc_parser_t* Let     = mpc_new("let");
+  mpc_parser_t* Vararg  = mpc_new("vararg");
   mpc_parser_t* Func    = mpc_new("func");
   mpc_parser_t* Lambda  = mpc_new("lambda");
   mpc_parser_t* Call    = mpc_new("call");
   mpc_parser_t* Comment = mpc_new("comment");
   mpc_parser_t* Eof     = mpc_new("eof");
   mpc_parser_t* Stmt    = mpc_new("stmt");
+  mpc_parser_t* Stmts   = mpc_new("stmts");
   mpc_parser_t* Program = mpc_new("program");
 
   mpc_err_t* err = mpca_lang(MPC_LANG_DEFAULT, STRUCTURE,
       Number, Factor, String, Ident,
-      Term, Lexp, Let, Lambda, Func, Call, Comment, Eof,
-      Stmt, Program);
+      Term, Lexp, Let, Vararg, Lambda, Func, Call, Comment, Eof,
+      Stmt, Stmts, Program);
   if (err != NULL) {
     mpc_err_print(err);
     mpc_err_delete(err);
@@ -317,17 +416,18 @@ int main(int argc, char **argv) {
   mpc_ast_print(result.output);
 
   ore_context* ore = ore_new(NULL);
-  ore_define_cfunc(ore, "println", ore_println);
+  ore_define_cfunc(ore, "println", -1, ore_println);
+  ore_define_cfunc(ore, "strlen", 1, ore_strlen);
   ore_eval(ore, result.output);
   ore_destroy(ore);
 
   mpc_ast_delete(result.output);
 
 leave:
-  mpc_cleanup(11,
+  mpc_cleanup(13,
       Number, Factor, String, Ident,
-      Term, Lexp, Let, Lambda, Func, Call, Comment, Eof,
-      Stmt, Program);
+      Term, Lexp, Let, Vararg, Lambda, Func, Call, Comment, Eof,
+      Stmt, Stmts, Program);
   return 0;
 }
 
