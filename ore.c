@@ -169,6 +169,7 @@ ore_value
 ore_strlen(ore_context* ore, int num_in, ore_value* args) {
   if (args[0].t != ORE_TYPE_STR) {
     fprintf(stderr, "Argument should be string\n");
+    ore->err = ORE_ERROR_EXCEPTION;
     return ore_value_nil();
   }
   ore_value v = { ORE_TYPE_INT };
@@ -305,6 +306,7 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
   }
   if (fn.t != ORE_TYPE_FUNC && fn.t != ORE_TYPE_CFUNC) {
     fprintf(stderr, "Unknown function '%s'\n", t->children[0]->contents);
+    ore->err = ORE_ERROR_EXCEPTION;
     return ore_value_nil();
   }
   ore_value v = ore_value_nil();
@@ -315,6 +317,7 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
         if (fn.v.f.num_in != -1 && num_in != fn.v.f.num_in) {
           fprintf(stderr, "Number of arguments mismatch: %d for %d\n",
             num_in, fn.v.f.num_in);
+          ore->err = ORE_ERROR_EXCEPTION;
           return ore_value_nil();
         }
         ore_value* args = (ore_value*) malloc(sizeof(ore_value) * num_in);
@@ -400,20 +403,55 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
           {
             int iv = rhs.t == ORE_TYPE_INT ? rhs.v.i : rhs.t == ORE_TYPE_FLOAT ? (int) rhs.v.d : 0;
             if (strcmp(op, "+") == 0) { v.v.i += iv; }
-            if (strcmp(op, "-") == 0) { v.v.i -= iv; }
-            if (strcmp(op, "*") == 0) { v.v.i *= iv; }
-            if (strcmp(op, "/") == 0) { v.v.i /= iv; }
-            if (strcmp(op, "%") == 0) { v.v.i %= iv; }
+            else if (strcmp(op, "-") == 0) { v.v.i -= iv; }
+            else if (strcmp(op, "*") == 0) { v.v.i *= iv; }
+            else if (strcmp(op, "/") == 0) { v.v.i /= iv; }
+            else if (strcmp(op, "%") == 0) { v.v.i %= iv; }
+            else {
+              fprintf(stderr, "Unknown operation '%s' for int\n", op);
+              ore->err = ORE_ERROR_EXCEPTION;
+              return ore_value_nil();
+            }
           }
           break;
         case ORE_TYPE_FLOAT:
           {
             double fv = rhs.t == ORE_TYPE_INT ? (double) rhs.v.i : rhs.t == ORE_TYPE_FLOAT ? rhs.v.d : 0;
             if (strcmp(op, "+") == 0) { v.v.d += fv; }
-            if (strcmp(op, "-") == 0) { v.v.d -= fv; }
-            if (strcmp(op, "*") == 0) { v.v.d *= fv; }
-            if (strcmp(op, "/") == 0) { v.v.d /= fv; }
-            if (strcmp(op, "%") == 0) { v.v.d = ((int) v.v.d % (int) fv); }
+            else if (strcmp(op, "-") == 0) { v.v.d -= fv; }
+            else if (strcmp(op, "*") == 0) { v.v.d *= fv; }
+            else if (strcmp(op, "/") == 0) { v.v.d /= fv; }
+            else if (strcmp(op, "%") == 0) { v.v.d = ((int) v.v.d % (int) fv); }
+            else {
+              fprintf(stderr, "Unknown operation '%s' for float\n", op);
+              ore->err = ORE_ERROR_EXCEPTION;
+              return ore_value_nil();
+            }
+          }
+          break;
+        case ORE_TYPE_STR:
+          {
+            char buf[32], *p = buf;
+            if (strcmp(op, "+") == 0) {
+              if (rhs.t == ORE_TYPE_INT)
+                sprintf(buf, "%i", rhs.v.i);
+              else if (rhs.t == ORE_TYPE_FLOAT)
+                sprintf(buf, "%f", rhs.v.d);
+              else if (rhs.t == ORE_TYPE_STR)
+                p = rhs.v.s;
+
+              size_t l = strlen(p) + strlen(v.v.s) + 1;
+              char* s = calloc(1, l);
+              strcpy(s, v.v.s);
+              strcat(s, p);
+              v.t = ORE_TYPE_STR;
+              v.v.s = s;
+              v.ref = 0;
+            } else {
+              fprintf(stderr, "Unknown operation '%s' for string\n", op);
+              ore->err = ORE_ERROR_EXCEPTION;
+              return ore_value_nil();
+            }
           }
           break;
       }
@@ -473,6 +511,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     return ore_value_nil();
   }
   fprintf(stderr, "Unknown operation '%s'\n", t->tag);
+  ore->err = ORE_ERROR_EXCEPTION;
   return ore_value_nil();
 }
 
