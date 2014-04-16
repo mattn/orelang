@@ -100,7 +100,9 @@ void
 ore_value_real_free(ore_value* v) {
   switch (v->t) {
     case ORE_TYPE_STR:
-      //printf("free %d, %p, %s\n", v->ref, v->v.s, v->v.s);
+#ifdef DEBUG
+      printf("free %d, %p, %s\n", v->ref, v->v.s, v->v.s);
+#endif
       free(v->v.s);
       v->v.s = NULL;
       break;
@@ -228,7 +230,24 @@ ore_get(ore_context* ore, const char* name) {
 }
 
 void
-ore_set(ore_context* ore, const char* name, ore_value v) {
+ore_ref(ore_context* ore, const char* name) {
+  khint_t k;
+  int r;
+  while (ore) {
+    k = kh_get(ident, ore->env, name);
+    if (k != kh_end(ore->env)) {
+      ore_value v = kh_value(ore->env, k);
+      ore_value_ref(&v);
+      k = kh_put(ident, ore->env, name, &r);
+      kh_value(ore->env, k) = v;
+      return;
+    }
+    ore = ore->parent;
+  }
+}
+
+void
+ore_set(ore_context* ore, const char* name, ore_value* v) {
   khint_t k;
   int r;
   while (ore) {
@@ -236,16 +255,16 @@ ore_set(ore_context* ore, const char* name, ore_value v) {
     if (k != kh_end(ore->env)) {
       ore_value old = kh_value(ore->env, k);
       ore_value_unref(&old);
-      kh_value(ore->env, k) = v; // update ref
+      kh_value(ore->env, k) = *v; // update ref
       k = kh_put(ident, ore->env, name, &r);
-      ore_value_ref(&v);
-      kh_value(ore->env, k) = v;
+      ore_value_ref(v);
+      kh_value(ore->env, k) = *v;
       return;
     }
     if (ore->parent == NULL) {
       k = kh_put(ident, ore->env, name, &r);
-      ore_value_ref(&v);
-      kh_value(ore->env, k) = v;
+      ore_value_ref(v);
+      kh_value(ore->env, k) = *v;
       return;
     }
     ore = ore->parent;
@@ -397,7 +416,9 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   }
   if (is_a(t, "let")) {
     ore_value v = ore_eval(ore, t->children[2]);
-    ore_set(ore, t->children[0]->contents, v);
+    if (is_a(t->children[2], "ident"))
+      ore_ref(ore, t->children[2]->contents);
+    ore_set(ore, t->children[0]->contents, &v);
     return v;
   }
   if (is_a(t, "var")) {
@@ -410,7 +431,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     v.v.f.env = ore;
     v.v.f.num_in = -1;
     v.v.f.x.o = t;
-    ore_set(ore, t->children[1]->contents, v);
+    ore_set(ore, t->children[1]->contents, &v);
     return v;
   }
   if (is_a(t, "lambda")) {

@@ -10,6 +10,9 @@ TARGET = ore
 ifeq ($(OS),Windows_NT)
 TARGET := ${TARGET}.exe
 endif
+ifeq (yes, $(ORE_DEBUG))
+CFLAGS := ${CFLAGS} -DDEBUG
+endif
 
 all : $(TARGET)
 
