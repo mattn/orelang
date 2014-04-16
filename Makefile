@@ -24,3 +24,6 @@ $(TARGET) : $(OBJS) mpc.h khash.h klist.h
 
 clean :
 	rm -f *.o $(TARGET)
+
+test :
+	./t/test.sh

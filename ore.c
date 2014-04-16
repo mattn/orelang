@@ -5,14 +5,21 @@
 #define STRUCTURE \
 "                                                                       \n" \
 "number    : /-?[0-9]+(\\.[0-9]*)?(e[0-9]+)?/ ;                         \n" \
+"true      : \"true\" ;                                                 \n" \
+"false     : \"false\" ;                                                \n" \
+"nil       : \"nil\" ;                                                  \n" \
 "factor    : '(' <lexp> ')'                                             \n" \
 "          | <number>                                                   \n" \
 "          | <string>                                                   \n" \
 "          | <array>                                                    \n" \
 "          | <hash>                                                     \n" \
+"          | <true>                                                     \n" \
+"          | <false>                                                    \n" \
+"          | <nil>                                                      \n" \
 "          | <ident> ;                                                  \n" \
 "string    : /\"[^\"]*\"/ ;                                             \n" \
 "item      : <factor> '[' <lexp> ']' ;                                  \n" \
+"cmp       : <factor> \"==\" <factor> ;                                 \n" \
 "call      : <ident> '(' <lexp>? (',' <lexp>)* ')' ;                    \n" \
 "anoncall  : <factor> '(' <lexp>? (',' <lexp>)* ')' ;                   \n" \
 "array     : '[' <lexp>? (',' <lexp>)* ']' ;                            \n" \
@@ -20,11 +27,15 @@
 "hash      : '{' <pair>? (',' <pair>)* '}' ;                            \n" \
 "ident     : /[a-zA-Z][a-zA-Z0-9_]*/ ;                                  \n" \
 "                                                                       \n" \
-"term      : (<lambda> | <item> | <call> | <anoncall>                     " \
+"term      : (<lambda> | <item> | <cmp> | <call> | <anoncall>             " \
 "        | <factor> (('*' | '/' | '%') <factor>)*) ;                    \n" \
 "lexp      : <term> (('+' | '-') <term>)* ;                             \n" \
 "let_v     : <ident> '=' <lexp> ';' ;                                   \n" \
 "let_a     : <item> '=' <lexp> ';' ;                                    \n" \
+"else_if   : \"else\" \"if\" '(' <lexp> ')' '{' <stmts> '}' ;           \n" \
+"else      : \"else\" '{' <stmts> '}' ;                                 \n" \
+"if_stmt   : \"if\" '(' <lexp> ')' '{' <stmts> '}' ;                    \n" \
+"if        : <if_stmt> <else_if>? <else>? ;                                   \n" \
 "var       : \"var\" <ident> '=' <lexp> ';' ;                           \n" \
 "vararg    : \"...\" ;                                                  \n" \
 "stmts     : <stmt>* ;                                                  \n" \
@@ -37,8 +48,8 @@
 "return    : \"return\" <lexp> ';' ;                                    \n" \
 "comment   : /#[^\n]*/ ;                                                \n" \
 "eof       : /$/ ;                                                      \n" \
-"stmt      : (<let_v> | <let_a> | <var> | (<lexp> ';')                    " \
-"            | <func> | <return> | <comment>) ;                         \n" \
+"stmt      : (<let_v> | <let_a> | <var> | <if>                            " \
+"            | <func> | <return> | <comment> | (<lexp> ';')) ;          \n" \
 "program   : <stmts> <eof> ;                                            \n"
 
 void ore_value_free(void* p);
@@ -47,6 +58,7 @@ void ore_value_free(void* p);
 
 typedef enum {
   ORE_TYPE_NIL,
+  ORE_TYPE_BOOL,
   ORE_TYPE_INT,
   ORE_TYPE_FLOAT,
   ORE_TYPE_STR,
@@ -94,6 +106,7 @@ typedef struct _ore_func {
 typedef struct _ore_value {
   ore_type t;
   union {
+    int b;
     int i;
     double d;
     ore_string* s;
@@ -210,7 +223,21 @@ ore_value_str(ore_value v) {
 
 ore_value
 ore_value_nil() {
-  ore_value v = { ORE_TYPE_NIL, 0 };
+  ore_value v = { ORE_TYPE_NIL };
+  return v;
+}
+
+ore_value
+ore_value_true() {
+  ore_value v = { ORE_TYPE_BOOL };
+  v.v.b = !0;
+  return v;
+}
+
+ore_value
+ore_value_false() {
+  ore_value v = { ORE_TYPE_BOOL };
+  v.v.b = 0;
   return v;
 }
 
@@ -226,6 +253,25 @@ ore_is_same_ref(ore_value lhs, ore_value rhs) {
     case ORE_TYPE_HASH:
       if (rhs.t != ORE_TYPE_HASH) return 0;
       return lhs.v.h->p == rhs.v.h->p;
+  }
+  return 0;
+}
+
+int
+ore_is_true(ore_value v) {
+  switch (v.t) {
+    case ORE_TYPE_BOOL:
+      return v.v.b != 0;
+    case ORE_TYPE_INT:
+      return v.v.i != 0;
+    case ORE_TYPE_FLOAT:
+      return v.v.d != 0;
+    case ORE_TYPE_STR:
+      return v.v.s->l > 0;
+    case ORE_TYPE_ARRAY:
+      return 1; // TODO
+    case ORE_TYPE_HASH:
+      return 1; // TODO
   }
   return 0;
 }
@@ -337,6 +383,8 @@ ore_kind(ore_value v) {
   switch (v.t) {
     case ORE_TYPE_NIL:
       return "nil";
+    case ORE_TYPE_BOOL:
+      return "bool";
     case ORE_TYPE_INT:
       return "int";
     case ORE_TYPE_FLOAT:
@@ -364,6 +412,12 @@ ore_print(ore_context* ore, int num_in, ore_value* args) {
     switch (v.t) {
       case ORE_TYPE_NIL:
         printf("nil");
+        break;
+      case ORE_TYPE_BOOL:
+        if (v.v.b)
+          printf("true");
+        else
+          printf("false");
         break;
       case ORE_TYPE_INT:
         printf("%d", v.v.i);
@@ -679,6 +733,117 @@ ore_value* ore_index_ref(ore_context* ore, ore_value v, ore_value e, int update)
   return NULL;
 }
 
+ore_value
+ore_expr(ore_context* ore, mpc_ast_t* t) {
+  int i;
+  ore_value v = ore_eval(ore, t->children[0]);
+  for (i = 1; i < t->children_num; i += 2) {
+    char* op = t->children[i]->contents;
+    ore_value rhs = ore_eval(ore, t->children[i+1]);
+    switch (v.t) {
+      case ORE_TYPE_INT:
+        {
+          int iv = rhs.t == ORE_TYPE_INT ? rhs.v.i : rhs.t == ORE_TYPE_FLOAT ? (int) rhs.v.d : 0;
+          if (strcmp(op, "+") == 0) { v.v.i += iv; }
+          else if (strcmp(op, "-") == 0) { v.v.i -= iv; }
+          else if (strcmp(op, "*") == 0) { v.v.i *= iv; }
+          else if (strcmp(op, "/") == 0) { v.v.i /= iv; }
+          else if (strcmp(op, "%") == 0) { v.v.i %= iv; }
+          else {
+            fprintf(stderr, "Unknown operation '%s' for int\n", op);
+            ore->err = ORE_ERROR_EXCEPTION;
+            return ore_value_nil();
+          }
+        }
+        break;
+      case ORE_TYPE_FLOAT:
+        {
+          double fv = rhs.t == ORE_TYPE_INT ? (double) rhs.v.i : rhs.t == ORE_TYPE_FLOAT ? rhs.v.d : 0;
+          if (strcmp(op, "+") == 0) { v.v.d += fv; }
+          else if (strcmp(op, "-") == 0) { v.v.d -= fv; }
+          else if (strcmp(op, "*") == 0) { v.v.d *= fv; }
+          else if (strcmp(op, "/") == 0) { v.v.d /= fv; }
+          else if (strcmp(op, "%") == 0) { v.v.d = ((int) v.v.d % (int) fv); }
+          else {
+            fprintf(stderr, "Unknown operation '%s' for float\n", op);
+            ore->err = ORE_ERROR_EXCEPTION;
+            return ore_value_nil();
+          }
+        }
+        break;
+      case ORE_TYPE_STR:
+        {
+          char buf[32], *p = buf;
+          if (strcmp(op, "+") == 0) {
+            if (rhs.t == ORE_TYPE_INT)
+              sprintf(buf, "%i", rhs.v.i);
+            else if (rhs.t == ORE_TYPE_FLOAT)
+              sprintf(buf, "%f", rhs.v.d);
+            else if (rhs.t == ORE_TYPE_STR)
+              p = rhs.v.s->p;
+
+            size_t l = strlen(p) + strlen(v.v.s->p) + 1;
+            char* s = calloc(1, l);
+            strcpy(s, v.v.s->p);
+            strcat(s, p);
+            v = ore_value_str_from_ptr(s, l);
+          } else {
+            fprintf(stderr, "Unknown operation '%s' for string\n", op);
+            ore->err = ORE_ERROR_EXCEPTION;
+            return ore_value_nil();
+          }
+        }
+        break;
+      default:
+        fprintf(stderr, "Unknown operation '%s' for string\n", op);
+        ore->err = ORE_ERROR_EXCEPTION;
+        return ore_value_nil();
+    }
+  }
+}
+
+ore_value
+ore_cmp(ore_value lhs, ore_value rhs) {
+  if (lhs.t != rhs.t) return ore_value_false();
+  switch (lhs.t) {
+    case ORE_TYPE_NIL:
+      return ore_value_true();
+    case ORE_TYPE_BOOL:
+      if (lhs.v.b == rhs.v.b)
+        return ore_value_true();
+      return ore_value_false();
+    case ORE_TYPE_INT:
+      if (lhs.v.i == rhs.v.i)
+        return ore_value_true();
+      return ore_value_false();
+    case ORE_TYPE_FLOAT:
+      if (lhs.v.d == rhs.v.d)
+        return ore_value_true();
+      return ore_value_false();
+    case ORE_TYPE_STR:
+      if (lhs.v.s->l == rhs.v.s->l &&
+          !memcmp(lhs.v.s->p, rhs.v.s->p, lhs.v.s->l))
+        return ore_value_true();
+      return ore_value_false();
+    case ORE_TYPE_ARRAY:
+      if (lhs.v.a->p == rhs.v.a->p)
+        return ore_value_true();
+      return ore_value_false();
+    case ORE_TYPE_HASH:
+      if (lhs.v.h->p == rhs.v.h->p)
+        return ore_value_true();
+      return ore_value_false();
+    case ORE_TYPE_FUNC:
+      if (lhs.v.f.x.o == rhs.v.f.x.o)
+        return ore_value_true();
+      return ore_value_false();
+    case ORE_TYPE_CFUNC:
+      if (lhs.v.f.x.c == rhs.v.f.x.c)
+        return ore_value_true();
+      return ore_value_false();
+    }
+    return ore_value_false();
+}
 
 ore_value
 ore_eval(ore_context* ore, mpc_ast_t* t) {
@@ -686,6 +851,15 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   //if (verbose)
     //printf("tag: %s\n", t->tag);
   if (is_a(t, "eof") || is_a(t, "comment")) {
+    return ore_value_nil();
+  }
+  if (is_a(t, "true")) {
+    return ore_value_true();
+  }
+  if (is_a(t, "false")) {
+    return ore_value_false();
+  }
+  if (is_a(t, "nil")) {
     return ore_value_nil();
   }
   if (is_a(t, "number")) {
@@ -728,67 +902,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     return ore_eval(ore, t->children[1]);
   }
   if (is_a(t, "lexp") || is_a(t, "term")) {
-    ore_value v = ore_eval(ore, t->children[0]);
-    for (i = 1; i < t->children_num; i += 2) {
-      char* op = t->children[i]->contents;
-      ore_value rhs = ore_eval(ore, t->children[i+1]);
-      switch (v.t) {
-        case ORE_TYPE_INT:
-          {
-            int iv = rhs.t == ORE_TYPE_INT ? rhs.v.i : rhs.t == ORE_TYPE_FLOAT ? (int) rhs.v.d : 0;
-            if (strcmp(op, "+") == 0) { v.v.i += iv; }
-            else if (strcmp(op, "-") == 0) { v.v.i -= iv; }
-            else if (strcmp(op, "*") == 0) { v.v.i *= iv; }
-            else if (strcmp(op, "/") == 0) { v.v.i /= iv; }
-            else if (strcmp(op, "%") == 0) { v.v.i %= iv; }
-            else {
-              fprintf(stderr, "Unknown operation '%s' for int\n", op);
-              ore->err = ORE_ERROR_EXCEPTION;
-              return ore_value_nil();
-            }
-          }
-          break;
-        case ORE_TYPE_FLOAT:
-          {
-            double fv = rhs.t == ORE_TYPE_INT ? (double) rhs.v.i : rhs.t == ORE_TYPE_FLOAT ? rhs.v.d : 0;
-            if (strcmp(op, "+") == 0) { v.v.d += fv; }
-            else if (strcmp(op, "-") == 0) { v.v.d -= fv; }
-            else if (strcmp(op, "*") == 0) { v.v.d *= fv; }
-            else if (strcmp(op, "/") == 0) { v.v.d /= fv; }
-            else if (strcmp(op, "%") == 0) { v.v.d = ((int) v.v.d % (int) fv); }
-            else {
-              fprintf(stderr, "Unknown operation '%s' for float\n", op);
-              ore->err = ORE_ERROR_EXCEPTION;
-              return ore_value_nil();
-            }
-          }
-          break;
-        case ORE_TYPE_STR:
-          {
-            char buf[32], *p = buf;
-            if (strcmp(op, "+") == 0) {
-              if (rhs.t == ORE_TYPE_INT)
-                sprintf(buf, "%i", rhs.v.i);
-              else if (rhs.t == ORE_TYPE_FLOAT)
-                sprintf(buf, "%f", rhs.v.d);
-              else if (rhs.t == ORE_TYPE_STR)
-                p = rhs.v.s->p;
-
-              size_t l = strlen(p) + strlen(v.v.s->p) + 1;
-              char* s = calloc(1, l);
-              strcpy(s, v.v.s->p);
-              strcat(s, p);
-              v = ore_value_str_from_ptr(s, l);
-            } else {
-              fprintf(stderr, "Unknown operation '%s' for string\n", op);
-              ore->err = ORE_ERROR_EXCEPTION;
-              return ore_value_nil();
-            }
-          }
-          break;
-      }
-    }
-    return v;
+    return ore_expr(ore, t);
   }
   if (is_a(t, "let_v")) {
     ore_value v = ore_eval(ore, t->children[2]);
@@ -811,6 +925,11 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     ore_value v = ore_eval(ore, t->children[3]);
     ore_define(ore, t->children[1]->contents, v);
     return v;
+  }
+  if (is_a(t, "cmp")) {
+    ore_value lhs = ore_eval(ore, t->children[0]);
+    ore_value rhs = ore_eval(ore, t->children[2]);
+    return ore_cmp(lhs, rhs);
   }
   if (is_a(t, "func")) {
     ore_value v = { ORE_TYPE_FUNC };
@@ -835,6 +954,41 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     ore->err = ORE_ERROR_RETURN;
     ore_value_ref(v);
     return v;
+  }
+  if (is_a(t, "if")) {
+    ore_value v;
+    int i;
+    for (i = 0; i < t->children_num; i++) {
+      int r = 0;
+      mpc_ast_t* f = t->children[i];
+      if (is_a(f, "if_stmt")) {
+        r = ore_is_true(ore_eval(ore, f->children[2]));
+      } else if (is_a(f, "else_if")) {
+        r = ore_is_true(ore_eval(ore, f->children[2]));
+      } else {
+        r = 1;
+      }
+      if (r) {
+        mpc_ast_t* stmts = NULL;
+        int j = 0;
+        for (; j < f->children_num; j++) {
+          if (is_a(f->children[j], "char") && f->children[j]->contents[0] == '{') {
+            j++;
+            break;
+          }
+        }
+        for (; j < f->children_num; j++) {
+          if (stmts == NULL && !is_a(f->children[i], "char")) {
+            stmts = f->children[i];
+          }
+        }
+        if (stmts) {
+          ore_eval(ore, stmts);
+        }
+        return ore_value_nil();
+      }
+    }
+    return ore_value_nil();
   }
   if (is_a(t, "stmts") || t->tag[0] == '>') {
     ore_value v;
@@ -903,6 +1057,9 @@ int main(int argc, char **argv) {
     exit(1);
   }
 
+  mpc_parser_t* True     = mpc_new("true");
+  mpc_parser_t* False    = mpc_new("false");
+  mpc_parser_t* Nil      = mpc_new("nil");
   mpc_parser_t* Number   = mpc_new("number");
   mpc_parser_t* Factor   = mpc_new("factor");
   mpc_parser_t* String   = mpc_new("string");
@@ -910,12 +1067,17 @@ int main(int argc, char **argv) {
   mpc_parser_t* Pair     = mpc_new("pair");
   mpc_parser_t* Hash     = mpc_new("hash");
   mpc_parser_t* Ident    = mpc_new("ident");
+  mpc_parser_t* Cmp      = mpc_new("cmp");
   mpc_parser_t* Term     = mpc_new("term");
   mpc_parser_t* Lexp     = mpc_new("lexp");
   mpc_parser_t* LetV     = mpc_new("let_v");
   mpc_parser_t* Value    = mpc_new("value");
   mpc_parser_t* Item     = mpc_new("item");
   mpc_parser_t* LetA     = mpc_new("let_a");
+  mpc_parser_t* If       = mpc_new("if");
+  mpc_parser_t* IfStmt   = mpc_new("if_stmt");
+  mpc_parser_t* ElseIf   = mpc_new("else_if");
+  mpc_parser_t* Else     = mpc_new("else");
   mpc_parser_t* Var      = mpc_new("var");
   mpc_parser_t* Vararg   = mpc_new("vararg");
   mpc_parser_t* Func     = mpc_new("func");
@@ -930,7 +1092,9 @@ int main(int argc, char **argv) {
   mpc_parser_t* Program  = mpc_new("program");
 
   mpc_err_t* err = mpca_lang(MPC_LANG_DEFAULT, STRUCTURE,
-      Number, Factor, String, Array, Pair, Hash, Ident,
+      True, False, Nil,
+      Number, Factor, String, Array, Pair, Hash, Ident, Cmp,
+      If, IfStmt, ElseIf, Else,
       Term, Lexp, LetV, Value, Item, LetA, Var, Vararg,
       Lambda, Func, Call, Anoncall, Return, Comment, Eof,
       Stmt, Stmts, Program);
@@ -982,8 +1146,10 @@ int main(int argc, char **argv) {
   ore_destroy(ore);
 
 leave:
-  mpc_cleanup(25,
-      Number, Factor, String, Array, Pair, Hash, Ident,
+  mpc_cleanup(29,
+      True, False, Nil,
+      Number, Factor, String, Array, Pair, Hash, Ident, Cmp,
+      If, IfStmt, ElseIf, Else,
       Term, Lexp, LetV, Value, Item, LetA, Var, Vararg,
       Lambda, Func, Call, Anoncall, Return, Comment, Eof,
       Stmt, Stmts, Program);
