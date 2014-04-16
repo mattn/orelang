@@ -436,10 +436,19 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
         n = 0;
         int vararg = 0;
         for (i = 2; i < f->children_num; i++) {
-          if (is_a(f->children[i], "char")) {
-            if (!strcmp(f->children[i]->contents, "...")) {
-              vararg = 1;
+          if (is_a(f->children[i], "vararg")) {
+            ore_value vargs = { ORE_TYPE_ARRAY };
+            klist_t(ident)* a = kl_init(ident);
+            vargs.v.a = a;
+            int j;
+            for (j = 0; j < num_in; j++) {
+              *kl_pushp(ident, a) = args[j];
             }
+            ore_define(env, f->children[i-1]->contents, vargs);
+          } else if (is_a(f->children[i], "ident")) {
+            if (n < num_in)
+              ore_define(env, f->children[i]->contents, args[n++]);
+          } else if (is_a(f->children[i], "char")) {
             if (f->children[i]->contents[0] == '{') {
               i++;
               break;
@@ -447,10 +456,7 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
           }
         }
         for (; i < f->children_num; i++) {
-          if (is_a(f->children[i], "ident")) {
-            if (n < num_in)
-              ore_define(env, f->children[i]->contents, args[n++]);
-          } else if (stmts == NULL && !is_a(f->children[i], "char")) {
+          if (stmts == NULL && !is_a(f->children[i], "char")) {
             stmts = f->children[i];
           }
         }
