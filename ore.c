@@ -66,14 +66,30 @@ typedef enum {
 
 typedef mpc_ast_t* ore_func;
 
+typedef struct _ore_string {
+  char* p;
+  int l;
+  int ref;
+} ore_string;
+
+typedef struct _ore_array {
+  void* p;
+  int ref;
+} ore_array;
+
+typedef struct _ore_hash {
+  void* p;
+  int ref;
+} ore_hash;
+
 typedef struct _ore_value {
   ore_type t;
   union {
     int i;
     double d;
-    char* s;
-    void* a;
-    void* h;
+    ore_string* s;
+    ore_array* a;
+    ore_hash* h;
     struct {
       void* env;
       int num_in;
@@ -83,19 +99,17 @@ typedef struct _ore_value {
       } x;
     } f;
   } v;
-  int ref;
 } ore_value;
 
-void ore_value_ref(ore_value* v);
-void ore_value_unref(ore_value* v);
+void ore_value_ref(ore_value);
+void ore_value_unref(ore_value);
 
-KHASH_MAP_INIT_STR(ident, ore_value)
-
-KLIST_INIT(ident, ore_value, ore_value_free)
+KHASH_MAP_INIT_STR(value, ore_value)
+KLIST_INIT(value, ore_value, ore_value_free)
 
 typedef struct _ore_context {
-  khash_t(ident)* env;
-  klist_t(ident)* unnamed;
+  khash_t(value)* env;
+  klist_t(value)* unnamed;
   struct _ore_context* parent;
   int err;
 } ore_context;
@@ -110,36 +124,86 @@ void ore_destroy(ore_context*);
 int verbose = 0;
 
 void
-ore_value_real_free(ore_value* v) {
-  switch (v->t) {
+ore_value_real_free(ore_value v) {
+  switch (v.t) {
     case ORE_TYPE_STR:
       if (verbose)
-        printf("free %d, %p, %s\n", v->ref, v->v.s, v->v.s);
-      free(v->v.s);
-      v->v.s = NULL;
+        printf("free str %s\n", v.v.s->p);
+      free(v.v.s->p);
+      free(v.v.s);
+      v.v.s = NULL;
       break;
-    case ORE_TYPE_FUNC:
+    case ORE_TYPE_ARRAY:
+      if (verbose)
+        printf("free array %p\n", v.v.a->p);
+      kl_destroy(value, v.v.a->p);
+      free(v.v.a);
+      v.v.a = NULL;
+      break;
+    case ORE_TYPE_HASH:
+      if (verbose)
+        printf("free hash %p\n", v.v.h->p);
+      kh_destroy(value, v.v.h->p);
+      free(v.v.h);
+      v.v.h = NULL;
       break;
   }
-  v->t = ORE_TYPE_NIL;
+  v.t = ORE_TYPE_NIL;
 }
 
 void
 ore_value_free(void *p) {
-  ore_value* v = (ore_value*) p;
-  ore_value_unref(v);
+  ore_value_unref(*(ore_value*) p);
 }
 
 void
-ore_value_ref(ore_value *v) {
-  v->ref++;
-}
-
-void
-ore_value_unref(ore_value* v) {
-  if (--v->ref <= 0) {
-    ore_value_real_free(v);
+ore_value_ref(ore_value v) {
+  switch (v.t) {
+    case ORE_TYPE_STR:
+      v.v.s->ref++;
+      if (verbose)
+        printf("ref str %d %p\n", v.v.s->ref, v.v.s->p);
+      break;
+    case ORE_TYPE_ARRAY:
+      v.v.a->ref++;
+      if (verbose)
+        printf("ref array %d %p\n", v.v.a->ref, v.v.a->p);
+      break;
+    case ORE_TYPE_HASH:
+      v.v.h->ref++;
+      if (verbose)
+        printf("ref hash %d %p\n", v.v.h->ref, v.v.h->p);
+      break;
   }
+}
+
+void
+ore_value_unref(ore_value v) {
+  switch (v.t) {
+    case ORE_TYPE_STR:
+      if (verbose)
+        printf("unref str %d %s\n", v.v.s->ref, v.v.s->p);
+      if (--v.v.s->ref <= 0)
+        ore_value_real_free(v);
+      break;
+    case ORE_TYPE_ARRAY:
+      if (verbose)
+        printf("unref array %d %p\n", v.v.a->ref, v.v.a->p);
+      if (--v.v.a->ref <= 0)
+        ore_value_real_free(v);
+      break;
+    case ORE_TYPE_HASH:
+      if (verbose)
+        printf("unref hash %d %p\n", v.v.h->ref, v.v.h->p);
+      if (--v.v.h->ref <= 0)
+        ore_value_real_free(v);
+      break;
+  }
+}
+
+const char*
+ore_value_str(ore_value v) {
+  return v.v.s->p;
 }
 
 ore_value
@@ -167,12 +231,42 @@ ore_parse_num(ore_context* ore, const char* s) {
 }
 
 ore_value
+ore_value_array_from_klist(klist_t(value)* p) {
+  ore_value v = { ORE_TYPE_ARRAY };
+  v.v.a = (ore_array*) malloc(sizeof(ore_array));
+  v.v.a->ref = 0;
+  v.v.a->p = p;
+  return v;
+}
+
+ore_value
+ore_value_hash_from_khash(khash_t(value)* p) {
+  ore_value v = { ORE_TYPE_HASH };
+  v.v.h = (ore_hash*) malloc(sizeof(ore_hash));
+  v.v.h->ref = 0;
+  v.v.h->p = p;
+  return v;
+}
+
+ore_value
+ore_value_str_from_ptr(char* p, int l) {
+  ore_value v = { ORE_TYPE_STR };
+  v.v.s = (ore_string*) malloc(sizeof(ore_string));
+  v.v.s->ref = 0;
+  v.v.s->l = l;
+  v.v.s->p = p;
+  return v;
+}
+
+ore_value
 ore_parse_str(ore_context* ore, const char* s) {
   ore_value v = { ORE_TYPE_STR };
   size_t l = strlen(s) - 2;
-  v.v.s = calloc(1, l + 1);
-  strncpy(v.v.s, s + 1, l);
-  v.v.s[l] = 0;
+  v.v.s = (ore_string*) malloc(sizeof(ore_string));
+  v.v.s->ref = 0;
+  v.v.s->l = l;
+  v.v.s->p = calloc(1, l + 1);
+  strncpy(v.v.s->p, s + 1, l);
   return v;
 }
 
@@ -181,20 +275,18 @@ ore_len(ore_context* ore, int num_in, ore_value* args) {
   ore_value v = { ORE_TYPE_INT };
   switch (args[0].t) {
     case ORE_TYPE_STR:
-      v.v.i = strlen(args[0].v.s);
+      v.v.i = strlen(args[0].v.s->p);
       return v;
     case ORE_TYPE_ARRAY:
       {
-        klist_t(ident)* a = (klist_t(ident)*) args[0].v.a;
-        kliter_t(ident)* k;
-        kliter_t(ident)* b = kl_begin(a);
+        klist_t(value)* a = (klist_t(value)*) args[0].v.a;
+        kliter_t(value)* k;
+        kliter_t(value)* b = kl_begin(a);
         int n = 0;
         for (k = b; k != kl_end(a); k = kl_next(k)) n++;
         v.v.i = n;
       }
       return v;
-    default:
-      break;
   }
   fprintf(stderr, "Argument should be string or array\n");
   ore->err = ORE_ERROR_EXCEPTION;
@@ -240,13 +332,13 @@ ore_print(ore_context* ore, int num_in, ore_value* args) {
         printf("%f", v.v.d);
         break;
       case ORE_TYPE_STR:
-        printf("%s", v.v.s);
+        printf("%s", v.v.s->p);
         break;
       case ORE_TYPE_ARRAY:
         {
-          klist_t(ident)* a = (klist_t(ident)*) v.v.a;
-          kliter_t(ident)* k;
-          kliter_t(ident)* b = kl_begin(a);
+          klist_t(value)* a = (klist_t(value)*) v.v.a;
+          kliter_t(value)* k;
+          kliter_t(value)* b = kl_begin(a);
           printf("[");
           for (k = b; k != kl_end(a); k = kl_next(k)) {
             if (k != b) {
@@ -260,7 +352,7 @@ ore_print(ore_context* ore, int num_in, ore_value* args) {
         break;
       case ORE_TYPE_HASH:
         {
-          khash_t(ident)* h = (khash_t(ident)*) v.v.h;
+          khash_t(value)* h = (khash_t(value)*) v.v.h;
           khiter_t k, b = kh_begin(h);
           int n = 0;
           printf("{");
@@ -310,7 +402,7 @@ ore_get(ore_context* ore, const char* name) {
     return ore_value_nil();
   khint_t k;
   while (p) {
-    k = kh_get(ident, p->env, name);
+    k = kh_get(value, p->env, name);
     if (k != kh_end(p->env)) {
       return kh_value(p->env, k);
     }
@@ -322,41 +414,17 @@ ore_get(ore_context* ore, const char* name) {
 }
 
 void
-ore_ref(ore_context* ore, const char* name) {
+ore_set(ore_context* ore, const char* name, ore_value v) {
   khint_t k;
   int r;
   while (ore) {
-    k = kh_get(ident, ore->env, name);
-    if (k != kh_end(ore->env)) {
-      ore_value v = kh_value(ore->env, k);
-      ore_value_ref(&v);
-      k = kh_put(ident, ore->env, name, &r);
-      kh_value(ore->env, k) = v;
-      return;
-    }
-    ore = ore->parent;
-  }
-}
-
-void
-ore_set(ore_context* ore, const char* name, ore_value* v) {
-  khint_t k;
-  int r;
-  while (ore) {
-    k = kh_get(ident, ore->env, name);
-    if (k != kh_end(ore->env)) {
+    k = kh_get(value, ore->env, name);
+    if (k != kh_end(ore->env) || ore->parent == NULL) {
       ore_value old = kh_value(ore->env, k);
-      ore_value_unref(&old);
-      kh_value(ore->env, k) = old; // update ref
-      k = kh_put(ident, ore->env, name, &r);
+      ore_value_unref(old);
       ore_value_ref(v);
-      kh_value(ore->env, k) = *v;
-      return;
-    }
-    if (ore->parent == NULL) {
-      k = kh_put(ident, ore->env, name, &r);
-      ore_value_ref(v);
-      kh_value(ore->env, k) = *v;
+      k = kh_put(value, ore->env, name, &r);
+      kh_value(ore->env, k) = v;
       return;
     }
     ore = ore->parent;
@@ -365,21 +433,21 @@ ore_set(ore_context* ore, const char* name, ore_value* v) {
 
 ore_value
 ore_define(ore_context* ore, const char* name, ore_value v) {
-  khint_t k = kh_get(ident, ore->env, name);
+  khint_t k = kh_get(value, ore->env, name);
   int r;
   if (k != kh_end(ore->env)) {
     ore_value old = kh_value(ore->env, k);
-    ore_value_unref(&old);
+    ore_value_unref(old);
   }
-  k = kh_put(ident, ore->env, name, &r);
-  ore_value_ref(&v);
+  k = kh_put(value, ore->env, name, &r);
+  ore_value_ref(v);
   kh_value(ore->env, k) = v;
 }
 
 void
 ore_define_cfunc(ore_context* ore, const char* name, int num_in, ore_cfunc_t c) {
   int r = 0;
-  khint_t k = kh_put(ident, ore->env, name, &r);
+  khint_t k = kh_put(value, ore->env, name, &r);
   ore_value v = { ORE_TYPE_CFUNC };
   v.v.f.env = ore;
   v.v.f.num_in = num_in;
@@ -442,14 +510,12 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
         int vararg = 0;
         for (i = 2; i < f->children_num; i++) {
           if (is_a(f->children[i], "vararg")) {
-            ore_value vargs = { ORE_TYPE_ARRAY };
-            klist_t(ident)* a = kl_init(ident);
-            vargs.v.a = a;
+            klist_t(value)* a = kl_init(value);
             int j;
             for (j = 0; j < num_in; j++) {
-              *kl_pushp(ident, a) = args[j];
+              *kl_pushp(value, a) = args[j];
             }
-            ore_define(env, f->children[i-1]->contents, vargs);
+            ore_define(env, f->children[i-1]->contents, ore_value_array_from_klist(a));
           } else if (is_a(f->children[i], "ident")) {
             if (n < num_in)
               ore_define(env, f->children[i]->contents, args[n++]);
@@ -469,7 +535,7 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
           v = ore_eval(env, stmts);
           if (ore->err != ORE_ERROR_EXCEPTION)
             ore->err = ORE_ERROR_NONE;
-          *kl_pushp(ident, ore->unnamed) = v;
+          *kl_pushp(value, ore->unnamed) = v;
         }
         free(args);
         ore_destroy(env);
@@ -486,16 +552,15 @@ ore_value* ore_index_ref(ore_context* ore, ore_value v, ore_value e, int update)
       ore->err = ORE_ERROR_EXCEPTION;
       return NULL;
     }
-    klist_t(ident)* a = (klist_t(ident)*) v.v.a;
+    klist_t(value)* a = (klist_t(value)*) v.v.a->p;
     int n = 0;
-    kliter_t(ident)* k;
-    kliter_t(ident)* b = kl_begin(a);
+    kliter_t(value)* k;
+    kliter_t(value)* b = kl_begin(a);
     for (k = b; k != kl_end(a); k = kl_next(k)) {
       if (n == e.v.i) {
         if (update) {
           ore_value old = kl_val(k);
-          ore_value_unref(&old);
-          kl_val(k) = old; // update ref
+          ore_value_unref(old);
         }
         return &kl_val(k);
       }
@@ -511,19 +576,18 @@ ore_value* ore_index_ref(ore_context* ore, ore_value v, ore_value e, int update)
       ore->err = ORE_ERROR_EXCEPTION;
       return NULL;
     }
-    khash_t(ident)* h = (khash_t(ident)*) v.v.h;
+    khash_t(value)* h = (khash_t(value)*) v.v.h->p;
     if (update) {
       int r;
-      khint_t k = kh_get(ident, h, e.v.s);
+      khint_t k = kh_get(value, h, e.v.s->p);
       if (k != kh_end(ore->env)) {
         ore_value old = kh_value(ore->env, k);
-        ore_value_unref(&old);
-        kh_value(ore->env, k) = old; // update ref
+        ore_value_unref(old);
       }
-      k = kh_put(ident, h, e.v.s, &r);
+      k = kh_put(value, h, e.v.s->p, &r);
       return &kh_value(h, k);
     } else {
-      khint_t k = kh_get(ident, h, e.v.s);
+      khint_t k = kh_get(value, h, e.v.s->p);
       if (k != kh_end(ore->env)) {
         return &kh_value(h, k);
       }
@@ -551,26 +615,22 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     return ore_parse_str(ore, t->contents);
   }
   if (is_a(t, "array")) {
-    ore_value v = { ORE_TYPE_ARRAY };
-    klist_t(ident)* a = kl_init(ident);
-    v.v.a = a;
+    klist_t(value)* a = kl_init(value);
     for (i = 1; i < t->children_num - 1; i += 2) {
       ore_value e = ore_eval(ore, t->children[i]);
-      *kl_pushp(ident, a) = e;
+      *kl_pushp(value, a) = e;
     }
-    return v;
+    return ore_value_array_from_klist(a);
   }
   if (is_a(t, "hash")) {
-    ore_value v = { ORE_TYPE_HASH };
-    khash_t(ident)* h = kh_init(ident);
-    v.v.h = h;
+    khash_t(value)* h = kh_init(value);
     for (i = 1; i < t->children_num - 1; i += 2) {
       ore_value key = ore_eval(ore, t->children[i]->children[0]);
       ore_value val = ore_eval(ore, t->children[i]->children[2]);
-      khint_t k = kh_put(ident, h, key.v.s, &r);
+      khint_t k = kh_put(value, h, key.v.s->p, &r);
       kh_value(h, k) = val;
     }
-    return v;
+    return ore_value_hash_from_khash(h);
   }
   if (is_a(t, "item")) {
     ore_value v = ore_eval(ore, t->children[0]);
@@ -632,15 +692,13 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
               else if (rhs.t == ORE_TYPE_FLOAT)
                 sprintf(buf, "%f", rhs.v.d);
               else if (rhs.t == ORE_TYPE_STR)
-                p = rhs.v.s;
+                p = rhs.v.s->p;
 
-              size_t l = strlen(p) + strlen(v.v.s) + 1;
+              size_t l = strlen(p) + strlen(v.v.s->p) + 1;
               char* s = calloc(1, l);
-              strcpy(s, v.v.s);
+              strcpy(s, v.v.s->p);
               strcat(s, p);
-              v.t = ORE_TYPE_STR;
-              v.v.s = s;
-              v.ref = 0;
+              v = ore_value_str_from_ptr(s, l);
             } else {
               fprintf(stderr, "Unknown operation '%s' for string\n", op);
               ore->err = ORE_ERROR_EXCEPTION;
@@ -654,22 +712,18 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   }
   if (is_a(t, "let_v")) {
     ore_value v = ore_eval(ore, t->children[2]);
-    if (is_a(t->children[2], "ident"))
-      ore_ref(ore, t->children[2]->contents);
-    ore_set(ore, t->children[0]->contents, &v);
+    ore_set(ore, t->children[0]->contents, v);
     return v;
   }
   if (is_a(t, "let_a")) {
     ore_value lhs = ore_eval(ore, t->children[0]->children[0]);
     ore_value i = ore_eval(ore, t->children[0]->children[2]);
     ore_value rhs = ore_eval(ore, t->children[2]);
-    if (is_a(t->children[2], "ident"))
-      ore_ref(ore, t->children[2]->contents);
     ore_value* r = ore_index_ref(ore, lhs, i, 1);
     if (r == NULL) {
       return ore_value_nil();
     }
-    ore_value_ref(&rhs);
+    ore_value_ref(rhs);
     *r = rhs;
     return rhs;
   }
@@ -683,7 +737,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     v.v.f.env = ore;
     v.v.f.num_in = -1;
     v.v.f.x.o = t;
-    ore_set(ore, t->children[1]->contents, &v);
+    ore_set(ore, t->children[1]->contents, v);
     return v;
   }
   if (is_a(t, "lambda")) {
@@ -699,7 +753,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   if (is_a(t, "return")) {
     ore_value v = ore_eval(ore, t->children[1]);
     ore->err = ORE_ERROR_RETURN;
-    ore_value_ref(&v);
+    ore_value_ref(v);
     return v;
   }
   if (is_a(t, "stmts") || t->tag[0] == '>') {
@@ -726,8 +780,8 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
 ore_context*
 ore_new(ore_context* parent) {
   ore_context* ore = (ore_context*) malloc(sizeof(ore_context));
-  ore->env = kh_init(ident);
-  ore->unnamed = kl_init(ident);
+  ore->env = kh_init(value);
+  ore->unnamed = kl_init(value);
   ore->err = ORE_ERROR_NONE;
   ore->parent = parent;
   return ore;
@@ -736,8 +790,8 @@ ore_new(ore_context* parent) {
 void
 ore_destroy(ore_context* ore) {
   ore_value v;
-  kh_foreach_value(ore->env, v, ore_value_unref(&v));
-  kl_destroy(ident, ore->unnamed);
+  kh_foreach_value(ore->env, v, ore_value_unref(v));
+  kl_destroy(value, ore->unnamed);
 }
 
 int
