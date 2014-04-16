@@ -1091,7 +1091,7 @@ int main(int argc, char **argv) {
   mpc_parser_t* Stmts    = mpc_new("stmts");
   mpc_parser_t* Program  = mpc_new("program");
 
-  mpc_err_t* err = mpca_lang(MPC_LANG_DEFAULT, STRUCTURE,
+  mpc_err_t* err = mpca_lang(MPCA_LANG_DEFAULT, STRUCTURE,
       True, False, Nil,
       Number, Factor, String, Array, Pair, Hash, Ident, Cmp,
       If, IfStmt, ElseIf, Else,
