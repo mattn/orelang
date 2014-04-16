@@ -824,6 +824,9 @@ int main(int argc, char **argv) {
       if (!fgets(buf, sizeof(buf), stdin)) {
         break;
       }
+      int l = strlen(buf);
+      if (l > 0 && buf[l-1] == '\n') { buf[l-1] = 0; l--; }
+      if (l == 0) continue;
       if (!mpc_parse(argv[0], buf, Stmt, &result)) {
         mpc_err_print(result.error);
         mpc_err_delete(result.error);
