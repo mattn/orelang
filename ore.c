@@ -14,14 +14,16 @@
 "          | <call>                                                     \n" \
 "          | <ident> ;                                                  \n" \
 "string    : /\"[^\"]*\"/ ;                                             \n" \
+"item      : <factor> '[' <factor> ']' ;                                \n" \
 "array     : '[' <lexp>? (',' <lexp>)* ']' ;                            \n" \
 "pair      : <string> ':' <lexp> ;                                      \n" \
 "hash      : '{' <pair>? (',' <pair>)* '}' ;                            \n" \
 "ident     : /[a-zA-Z][a-zA-Z0-9_]*/ ;                                  \n" \
 "                                                                       \n" \
 "term      : <factor> (('*' | '/' | '%') <factor>)* ;                   \n" \
-"lexp      : <term> (('+' | '-') <term>)* ;                             \n" \
-"let       : <ident> '=' <lexp> ';' ;                                   \n" \
+"lexp      : (<item> | <term> (('+' | '-') <term>)*);                   \n" \
+"let_v     : <ident> '=' <lexp> ';' ;                                   \n" \
+"let_a     : <item> '=' <lexp> ';' ;                                    \n" \
 "var       : \"var\" <ident> '=' <lexp> ';' ;                           \n" \
 "vararg    : \"...\" ;                                                  \n" \
 "stmts     : <stmt>* ;                                                  \n" \
@@ -35,7 +37,7 @@
 "return    : \"return\" <lexp> ';' ;                                    \n" \
 "comment   : /#[^\n]*/ ;                                                \n" \
 "eof       : /$/ ;                                                      \n" \
-"stmt      : (<let> | <var> | (<lexp> ';')                                " \
+"stmt      : (<let_v> | <let_a> | <var> | (<lexp> ';')                    " \
 "            | <func> | <return> | <comment>) ;                         \n" \
 "program   : <stmts> <eof> ;                                            \n"
 
@@ -186,6 +188,28 @@ ore_strlen(ore_context* ore, int num_in, ore_value* args) {
   return v;
 }
 
+const char*
+ore_kind(ore_value v) {
+  switch (v.t) {
+    case ORE_TYPE_NIL:
+      return "nil";
+    case ORE_TYPE_INT:
+      return "int";
+    case ORE_TYPE_FLOAT:
+      return "float";
+    case ORE_TYPE_STR:
+      return "string";
+    case ORE_TYPE_CFUNC:
+      return "func";
+    case ORE_TYPE_FUNC:
+      return "func";
+    case ORE_TYPE_ARRAY:
+      return "array";
+    case ORE_TYPE_HASH:
+      return "hash";
+  }
+  return "unknown";
+}
 ore_value
 ore_print(ore_context* ore, int num_in, ore_value* args) {
   int i;
@@ -431,6 +455,42 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
   return v;
 }
 
+ore_value* ore_index_ref(ore_context* ore, ore_value v, ore_value e) {
+  if (v.t == ORE_TYPE_ARRAY) {
+    if (e.t != ORE_TYPE_INT) {
+      fprintf(stderr, "Array index should be int\n");
+      ore->err = ORE_ERROR_EXCEPTION;
+      return NULL;
+    }
+    klist_t(ident)* a = (klist_t(ident)*) v.v.a;
+    int n = 0;
+    kliter_t(ident)* k;
+    kliter_t(ident)* b = kl_begin(a);
+    for (k = b; k != kl_end(a); k = kl_next(k)) {
+      if (n == e.v.i)
+        return &kl_val(k);
+      n++;
+    }
+  }
+  if (v.t == ORE_TYPE_HASH) {
+    if (e.t != ORE_TYPE_STR) {
+      fprintf(stderr, "Hash index should be string\n");
+      ore->err = ORE_ERROR_EXCEPTION;
+      return NULL;
+    }
+    khash_t(ident)* h = (khash_t(ident)*) v.v.h;
+    khint_t k = kh_get(ident, h, e.v.s);
+    if (k != kh_end(ore->env)) {
+      return &kh_value(h, k);
+    }
+    return NULL;
+  }
+  fprintf(stderr, "Unknown index operation for %s\n", ore_kind(v));
+  ore->err = ORE_ERROR_EXCEPTION;
+  return NULL;
+}
+
+
 ore_value
 ore_eval(ore_context* ore, mpc_ast_t* t) {
   int i, r;
@@ -464,6 +524,15 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
       kh_value(h, k) = val;
     }
     return v;
+  }
+  if (is_a(t, "item")) {
+    ore_value v = ore_eval(ore, t->children[0]);
+    ore_value e = ore_eval(ore, t->children[2]);
+    ore_value* r = ore_index_ref(ore, v, e);
+    if (r == NULL) {
+      return ore_value_nil();
+    }
+    return *r;
   }
   if (is_a(t, "ident")) {
     return ore_get(ore, t->contents);
@@ -536,12 +605,26 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     }
     return v;
   }
-  if (is_a(t, "let")) {
+  if (is_a(t, "let_v")) {
     ore_value v = ore_eval(ore, t->children[2]);
     if (is_a(t->children[2], "ident"))
       ore_ref(ore, t->children[2]->contents);
     ore_set(ore, t->children[0]->contents, &v);
     return v;
+  }
+  if (is_a(t, "let_a")) {
+    ore_value lhs = ore_eval(ore, t->children[0]->children[0]);
+    ore_value i = ore_eval(ore, t->children[0]->children[2]);
+    ore_value rhs = ore_eval(ore, t->children[2]);
+    if (is_a(t->children[2], "ident"))
+      ore_ref(ore, t->children[2]->contents);
+    ore_value* r = ore_index_ref(ore, lhs, i);
+    if (r == NULL) {
+      return ore_value_nil();
+    }
+    ore_value_ref(&rhs);
+    *r = rhs;
+    return rhs;
   }
   if (is_a(t, "var")) {
     ore_value v = ore_eval(ore, t->children[3]);
@@ -624,7 +707,10 @@ int main(int argc, char **argv) {
   mpc_parser_t* Ident   = mpc_new("ident");
   mpc_parser_t* Term    = mpc_new("term");
   mpc_parser_t* Lexp    = mpc_new("lexp");
-  mpc_parser_t* Let     = mpc_new("let");
+  mpc_parser_t* LetV    = mpc_new("let_v");
+  mpc_parser_t* Value   = mpc_new("value");
+  mpc_parser_t* Item    = mpc_new("item");
+  mpc_parser_t* LetA    = mpc_new("let_a");
   mpc_parser_t* Var     = mpc_new("var");
   mpc_parser_t* Vararg  = mpc_new("vararg");
   mpc_parser_t* Func    = mpc_new("func");
@@ -639,7 +725,8 @@ int main(int argc, char **argv) {
 
   mpc_err_t* err = mpca_lang(MPC_LANG_DEFAULT, STRUCTURE,
       Number, Factor, String, Array, Pair, Hash, Ident,
-      Term, Lexp, Let, Var, Vararg, Lambda, Func, Call, Return, Comment, Eof,
+      Term, Lexp, LetV, Value, Item, LetA, Var, Vararg,
+      Lambda, Func, Call, Return, Comment, Eof,
       Stmt, Stmts, Program);
   if (err != NULL) {
     mpc_err_print(err);
@@ -667,9 +754,10 @@ int main(int argc, char **argv) {
   mpc_ast_delete(result.output);
 
 leave:
-  mpc_cleanup(21,
+  mpc_cleanup(24,
       Number, Factor, String, Array, Pair, Hash, Ident,
-      Term, Lexp, Let, Var, Vararg, Lambda, Func, Call, Return, Comment, Eof,
+      Term, Lexp, LetV, Value, Item, LetA, Var, Vararg,
+      Lambda, Func, Call, Return, Comment, Eof,
       Stmt, Stmts, Program);
   return 0;
 }
