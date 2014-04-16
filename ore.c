@@ -20,7 +20,7 @@
 "hash      : '{' <pair>? (',' <pair>)* '}' ;                            \n" \
 "ident     : /[a-zA-Z][a-zA-Z0-9_]*/ ;                                  \n" \
 "                                                                       \n" \
-"term      : (<lambda> | <item> | <call> | <anoncall>                                " \
+"term      : (<lambda> | <item> | <call> | <anoncall>                     " \
 "        | <factor> (('*' | '/' | '%') <factor>)*) ;                    \n" \
 "lexp      : <term> (('+' | '-') <term>)* ;                             \n" \
 "let_v     : <ident> '=' <lexp> ';' ;                                   \n" \
@@ -279,12 +279,33 @@ ore_value_str_from_ptr(char* p, int l) {
 ore_value
 ore_parse_str(ore_context* ore, const char* s) {
   ore_value v = { ORE_TYPE_STR };
-  size_t l = strlen(s) - 2;
+  char* t = strdup(s);
+  char* p = t + 1;
+  char* ps = p;
+  int n = 0;
+  while (*p) {
+    if (*p == '\\' && *(p+1)) {
+      p++;
+      switch (*p) {
+        case 'b': *ps = '\b'; break;
+        case 'f': *ps = '\f'; break;
+        case 'r': *ps = '\r'; break;
+        case 'n': *ps = '\n'; break;
+        case 't': *ps = '\t'; break;
+        default:
+         *ps = *p;
+      }
+    } else
+      *ps = *p;
+    p++; ps++; n++;
+  }
+  *p = 0x00;
+  size_t l = n - 1;
   v.v.s = (ore_string*) malloc(sizeof(ore_string));
   v.v.s->ref = 0;
   v.v.s->l = l;
   v.v.s->p = calloc(1, l + 1);
-  strncpy(v.v.s->p, s + 1, l);
+  strncpy(v.v.s->p, t + 1, l);
   return v;
 }
 
