@@ -305,16 +305,19 @@ ore_p(ore_value v) {
 
 ore_value
 ore_get(ore_context* ore, const char* name) {
-  if (!ore)
+  ore_context* p = ore;
+  if (!p)
     return ore_value_nil();
   khint_t k;
-  while (ore) {
-    k = kh_get(ident, ore->env, name);
-    if (k != kh_end(ore->env)) {
-      return kh_value(ore->env, k);
+  while (p) {
+    k = kh_get(ident, p->env, name);
+    if (k != kh_end(p->env)) {
+      return kh_value(p->env, k);
     }
-    ore = ore->parent;
+    p = p->parent;
   }
+  fprintf(stderr, "Unknown identifier '%s'\n", name);
+  ore->err = ORE_ERROR_EXCEPTION;
   return ore_value_nil();
 }
 
@@ -392,6 +395,8 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
   } else {
     fn = ore_eval(ore, t->children[0]);
   }
+  if (ore->err != ORE_ERROR_NONE)
+    return ore_value_nil();
   if (fn.t != ORE_TYPE_FUNC && fn.t != ORE_TYPE_CFUNC) {
     fprintf(stderr, "Unknown function '%s'\n", t->children[0]->contents);
     ore->err = ORE_ERROR_EXCEPTION;
