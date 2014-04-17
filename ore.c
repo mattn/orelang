@@ -906,8 +906,8 @@ ore_expr(ore_context* ore, mpc_ast_t* t) {
             else if (rhs.t == ORE_TYPE_STR)
               p = rhs.v.s->p;
 
-            size_t l = strlen(p) + strlen(v.v.s->p) + 1;
-            char* s = calloc(1, l);
+            size_t l = strlen(p) + strlen(v.v.s->p);
+            char* s = calloc(1, l + 1);
             strcpy(s, v.v.s->p);
             strcat(s, p);
             v = ore_value_str_from_ptr(ore, s, l);

@@ -10,7 +10,7 @@ func is(expect, got, name) {
   if (expect == got) {
     println("OK", name);
   } else {
-    println("NG", name);
+    println("NG", name, "[" + expect + "]", "[" + got + "]");
   }
 }
 
