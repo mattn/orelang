@@ -65,7 +65,8 @@ typedef enum {
   ORE_TYPE_ARRAY,
   ORE_TYPE_HASH,
   ORE_TYPE_FUNC,
-  ORE_TYPE_CFUNC
+  ORE_TYPE_CFUNC,
+  ORE_TYPE_ENV,
 } ore_type;
 
 typedef enum {
@@ -103,6 +104,11 @@ typedef struct _ore_func {
   } x;
 } ore_func;
 
+typedef struct _ore_env {
+  void* p;
+  int ref;
+} ore_env;
+
 typedef struct _ore_value {
   ore_type t;
   union {
@@ -113,6 +119,7 @@ typedef struct _ore_value {
     ore_array* a;
     ore_hash* h;
     ore_func f;
+    ore_env* e;
   } v;
 } ore_value;
 
@@ -162,6 +169,14 @@ ore_value_real_free(ore_value v) {
       free(v.v.h);
       v.v.h = NULL;
       break;
+    case ORE_TYPE_ENV:
+      if (verbose)
+        printf("free env %p\n", v.v.e->p);
+      ore_destroy((ore_context*) v.v.e->p);
+      //kh_destroy(value, v.v.e->p);
+      //free(v.v.e);
+      v.v.e = NULL;
+      break;
   }
   v.t = ORE_TYPE_NIL;
 }
@@ -189,6 +204,11 @@ ore_value_ref(ore_value v) {
       if (verbose)
         printf("ref hash %d %p\n", v.v.h->ref, v.v.h->p);
       break;
+    case ORE_TYPE_ENV:
+      v.v.e->ref++;
+      if (verbose)
+        printf("ref env %d %p\n", v.v.e->ref, v.v.e->p);
+      break;
   }
 }
 
@@ -211,6 +231,12 @@ ore_value_unref(ore_value v) {
       if (verbose)
         printf("unref hash %d %p\n", v.v.h->ref, v.v.h->p);
       if (--v.v.h->ref <= 0)
+        ore_value_real_free(v);
+      break;
+    case ORE_TYPE_ENV:
+      if (verbose)
+        printf("unref env %d %p\n", v.v.e->ref, v.v.e->p);
+      if (--v.v.e->ref <= 0)
         ore_value_real_free(v);
       break;
   }
@@ -253,6 +279,9 @@ ore_is_same_ref(ore_value lhs, ore_value rhs) {
     case ORE_TYPE_HASH:
       if (rhs.t != ORE_TYPE_HASH) return 0;
       return lhs.v.h->p == rhs.v.h->p;
+    case ORE_TYPE_ENV:
+      if (rhs.t != ORE_TYPE_ENV) return 0;
+      return lhs.v.e->p == rhs.v.e->p;
   }
   return 0;
 }
@@ -272,6 +301,8 @@ ore_is_true(ore_value v) {
       return 1; // TODO
     case ORE_TYPE_HASH:
       return 1; // TODO
+    case ORE_TYPE_ENV:
+      return 1; // TODO
   }
   return 0;
 }
@@ -283,7 +314,7 @@ ore_is_nil(ore_value v) {
 
 ore_value
 ore_parse_num(ore_context* ore, const char* s) {
-  ore_value v;
+  ore_value v = {0};
   if (!strchr(s, '.')) {
     v.t = ORE_TYPE_INT;
     v.v.i = atoi(s);
@@ -309,6 +340,15 @@ ore_value_hash_from_khash(khash_t(value)* p) {
   v.v.h = (ore_hash*) malloc(sizeof(ore_hash));
   v.v.h->ref = 0;
   v.v.h->p = p;
+  return v;
+}
+
+ore_value
+ore_value_env_from_context(ore_context* p) {
+  ore_value v = { ORE_TYPE_ENV };
+  v.v.e = (ore_env*) malloc(sizeof(ore_env));
+  v.v.e->ref = 0;
+  v.v.e->p = p;
   return v;
 }
 
@@ -399,6 +439,8 @@ ore_kind(ore_value v) {
       return "array";
     case ORE_TYPE_HASH:
       return "hash";
+    case ORE_TYPE_ENV:
+      return "env";
   }
   return "unknown";
 }
@@ -469,6 +511,9 @@ ore_print(ore_context* ore, int num_in, ore_value* args) {
         break;
       case ORE_TYPE_CFUNC:
         printf("<func-0x%p>", v.v.f.x.c);
+        break;
+      case ORE_TYPE_ENV:
+        printf("<env>");
         break;
       default:
         printf("<unknown>");
@@ -668,11 +713,12 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
           v = ore_eval(env, stmts);
           if (env->err == ORE_ERROR_EXCEPTION)
             ore->err = env->err;
+          char buf[64];
+          sprintf(buf, "0x%p", env->env);
           *kl_pushp(value, ore->unnamed) = v;
-          *kl_pushp(value, ore->unnamed) = ore_value_hash_from_khash(env->env);
+          ore_define(ore, buf, ore_value_env_from_context(env));
         }
         free(args);
-        ore_destroy(env);
       }
       break;
   }
@@ -737,6 +783,7 @@ ore_value
 ore_expr(ore_context* ore, mpc_ast_t* t) {
   int i;
   ore_value v = ore_eval(ore, t->children[0]);
+printf("type = %d\n", v.t);
   for (i = 1; i < t->children_num; i += 2) {
     char* op = t->children[i]->contents;
     ore_value rhs = ore_eval(ore, t->children[i+1]);
@@ -750,7 +797,7 @@ ore_expr(ore_context* ore, mpc_ast_t* t) {
           else if (strcmp(op, "/") == 0) { v.v.i /= iv; }
           else if (strcmp(op, "%") == 0) { v.v.i %= iv; }
           else {
-            fprintf(stderr, "Unknown operation '%s' for int\n", op);
+            fprintf(stderr, "Unknown operator '%s' for int\n", op);
             ore->err = ORE_ERROR_EXCEPTION;
             return ore_value_nil();
           }
@@ -765,7 +812,7 @@ ore_expr(ore_context* ore, mpc_ast_t* t) {
           else if (strcmp(op, "/") == 0) { v.v.d /= fv; }
           else if (strcmp(op, "%") == 0) { v.v.d = ((int) v.v.d % (int) fv); }
           else {
-            fprintf(stderr, "Unknown operation '%s' for float\n", op);
+            fprintf(stderr, "Unknown operator '%s' for float\n", op);
             ore->err = ORE_ERROR_EXCEPTION;
             return ore_value_nil();
           }
@@ -774,7 +821,7 @@ ore_expr(ore_context* ore, mpc_ast_t* t) {
       case ORE_TYPE_STR:
         {
           char buf[32], *p = buf;
-          if (strcmp(op, "+") == 0) {
+          if (!strcmp(op, "+")) {
             if (rhs.t == ORE_TYPE_INT)
               sprintf(buf, "%i", rhs.v.i);
             else if (rhs.t == ORE_TYPE_FLOAT)
@@ -788,18 +835,19 @@ ore_expr(ore_context* ore, mpc_ast_t* t) {
             strcat(s, p);
             v = ore_value_str_from_ptr(s, l);
           } else {
-            fprintf(stderr, "Unknown operation '%s' for string\n", op);
+            fprintf(stderr, "Unknown operator '%s' for string\n", op);
             ore->err = ORE_ERROR_EXCEPTION;
             return ore_value_nil();
           }
         }
         break;
       default:
-        fprintf(stderr, "Unknown operation '%s' for string\n", op);
+        fprintf(stderr, "Unknown operator '%s' for %s\n", op, ore_kind(v));
         ore->err = ORE_ERROR_EXCEPTION;
         return ore_value_nil();
     }
   }
+  return v;
 }
 
 ore_value
@@ -839,6 +887,10 @@ ore_cmp(ore_value lhs, ore_value rhs) {
       return ore_value_false();
     case ORE_TYPE_CFUNC:
       if (lhs.v.f.x.c == rhs.v.f.x.c)
+        return ore_value_true();
+      return ore_value_false();
+    case ORE_TYPE_ENV:
+      if (lhs.v.e->p == rhs.v.e->p)
         return ore_value_true();
       return ore_value_false();
     }
@@ -1025,7 +1077,9 @@ void
 ore_destroy(ore_context* ore) {
   ore_value v;
   kh_foreach_value(ore->env, v, ore_value_unref(v));
+  kh_destroy(value, ore->env);
   kl_destroy(value, ore->unnamed);
+  free(ore);
 }
 
 int
