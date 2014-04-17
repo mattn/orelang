@@ -12,9 +12,9 @@
 
 ```
 # calculation
-a = 1;
+var a = 1;
 a = a * 2 + 1;
-b = "hello";
+var b = "hello";
 
 # display
 println(b, a + 1);
