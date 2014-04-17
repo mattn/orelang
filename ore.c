@@ -852,7 +852,7 @@ ore_value* ore_index_ref(ore_context* ore, ore_value v, ore_value e, int update)
     }
     return NULL;
   }
-  fprintf(stderr, "Unknown index operation for %s\n", ore_kind(v));
+  fprintf(stderr, "Invalid index operation for %s\n", ore_kind(v));
   ore->err = ORE_ERROR_EXCEPTION;
   return NULL;
 }
