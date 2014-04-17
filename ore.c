@@ -16,11 +16,12 @@
 "          | <true>                                                     \n" \
 "          | <false>                                                    \n" \
 "          | <nil>                                                      \n" \
+"          | <call>                                                     \n" \
 "          | <ident> ;                                                  \n" \
-"string    : /\"[^\"]*\"/ ;                                             \n" \
+"string    : /\"(\\\\.|[^\"])*\"/ ;                                     \n" \
 "item      : <factor> '[' <lexp> ']' ;                                  \n" \
-"cmp       : <factor> (\"==\" | \"!=\"                                    " \
-"        | \"==\" | \"!=\" | \"<\" | \"<=\" | \">\" | \">=\" )            " \
+"cmp       : <factor>                                                     " \
+"        (\"!=\" | \"==\" | \"<=\" | \"<\" | \">=\" | \">\" )             " \
 "        <factor> ;                                                     \n" \
 "call      : <ident> '(' <lexp>? (',' <lexp>)* ')' ;                    \n" \
 "anoncall  : <factor> '(' <lexp>? (',' <lexp>)* ')' ;                   \n" \
@@ -49,11 +50,14 @@
 "func      : \"func\" <ident>                                             " \
 "        '(' <ident>? (<vararg> | (',' <ident>)*) ')' '{' <stmts> '}' ; \n" \
 "                                                                       \n" \
+"break     : \"break\" ';' ;                                            \n" \
+"continue  : \"continue\" ';' ;                                         \n" \
 "return    : \"return\" <lexp> ';' ;                                    \n" \
 "comment   : /#[^\n]*/ ;                                                \n" \
 "eof       : /$/ ;                                                      \n" \
 "stmt      : (<let_v> | <let_a> | <var> | <if> | <while> | <for_in>       " \
-"            | <func> | <return> | <comment> | (<lexp> ';')) ;          \n" \
+"        | <func> | <return> | <break> | <continue> | <comment>         \n" \
+"        | (<lexp> ';')) ;                                              \n" \
 "program   : <stmts> <eof> ;                                            \n"
 
 void ore_value_free(void* p);
@@ -106,6 +110,7 @@ typedef struct _ore_func {
     void* c;
     ore_func_t o;
   } x;
+  void* u;
 } ore_func;
 
 typedef struct _ore_env {
@@ -127,6 +132,11 @@ typedef struct _ore_value {
   } v;
 } ore_value;
 
+typedef struct {
+  mpc_ast_t *root;
+  mpc_parser_t *program;
+} ore_parse_context;
+
 void ore_value_ref(ore_value);
 void ore_value_unref(ore_value);
 void ore_p(ore_value);
@@ -145,7 +155,7 @@ typedef struct _ore_context {
   int err;
 } ore_context;
 
-typedef ore_value (*ore_cfunc_t)(ore_context*, int, ore_value*);
+typedef ore_value (*ore_cfunc_t)(ore_context*, int, ore_value*, void*);
 
 ore_value ore_call(ore_context*, mpc_ast_t*);
 ore_value ore_eval(ore_context*, mpc_ast_t*);
@@ -252,7 +262,7 @@ ore_value_unref(ore_value v) {
 }
 
 const char*
-ore_value_str(ore_value v) {
+ore_value_str_ptr(ore_value v) {
   return v.v.s->p;
 }
 
@@ -386,7 +396,7 @@ ore_value_str_from_ptr(ore_context* ore, char* p, int l) {
     return ore_value_nil();
   }
   v.v.s->ref = 0;
-  v.v.s->l = l;
+  v.v.s->l = l < 0 ? strlen(p) : l;
   v.v.s->p = p;
   return v;
 }
@@ -430,7 +440,7 @@ ore_parse_str(ore_context* ore, const char* s) {
 }
 
 ore_value
-ore_len(ore_context* ore, int num_in, ore_value* args) {
+ore_len(ore_context* ore, int num_in, ore_value* args, void* u) {
   ore_value v = { ORE_TYPE_INT };
   switch (args[0].t) {
     case ORE_TYPE_STR:
@@ -438,7 +448,7 @@ ore_len(ore_context* ore, int num_in, ore_value* args) {
       return v;
     case ORE_TYPE_ARRAY:
       {
-        ore_array_t* a = (ore_array_t*) args[0].v.a;
+        ore_array_t* a = (ore_array_t*) args[0].v.a->p;
         ore_array_iter_t *k;
         int n = 0;
         for (k = kl_begin(a); k != kl_end(a); k = kl_next(k)) n++;
@@ -452,7 +462,30 @@ ore_len(ore_context* ore, int num_in, ore_value* args) {
 }
 
 ore_value
-ore_exit(ore_context* ore, int num_in, ore_value* args) {
+ore_load(ore_context* ore, int num_in, ore_value* args, void* u) {
+  ore_parse_context* pctx = (ore_parse_context*) u;
+
+  mpc_result_t result;
+  if (args[0].t != ORE_TYPE_STR) {
+    fprintf(stderr, "Argument should be string\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  if (!mpc_parse_contents(ore_value_str_ptr(args[0]), pctx->program, &result)) {
+    mpc_err_print(result.error);
+    mpc_err_delete(result.error);
+    ore->err = ORE_ERROR_EXCEPTION;
+    return;
+  }
+  if (verbose)
+    mpc_ast_print(result.output);
+  ore_eval(ore, result.output);
+  mpc_ast_add_child(pctx->root, result.output);
+  return ore_value_nil();
+}
+
+ore_value
+ore_exit(ore_context* ore, int num_in, ore_value* args, void* u) {
   exit(0);
   return ore_value_nil();
 }
@@ -485,7 +518,7 @@ ore_kind(ore_value v) {
 }
 
 ore_value
-ore_print(ore_context* ore, int num_in, ore_value* args) {
+ore_print(ore_context* ore, int num_in, ore_value* args, void* u) {
   int i;
   for (i = 0; i < num_in; i++) {
     if (i != 0) printf(", ");
@@ -520,7 +553,7 @@ ore_print(ore_context* ore, int num_in, ore_value* args) {
               printf(",");
             }
             ore_value pa[] = { kl_val(k) };
-            ore_print(ore, 1, pa);
+            ore_print(ore, 1, pa, NULL);
           }
           printf("]");
         }
@@ -539,7 +572,7 @@ ore_print(ore_context* ore, int num_in, ore_value* args) {
             const char* key = kh_key(h, k);
             printf("%s: ", key);
             ore_value pa[] = { kh_val(h, k) };
-            ore_print(ore, 1, pa);
+            ore_print(ore, 1, pa, NULL);
             n++;
           }
           printf("}");
@@ -563,14 +596,14 @@ ore_print(ore_context* ore, int num_in, ore_value* args) {
 }
 
 ore_value
-ore_println(ore_context* ore, int num_in, ore_value* args) {
-  ore_print(ore, num_in, args);
+ore_println(ore_context* ore, int num_in, ore_value* args, void* u) {
+  ore_print(ore, num_in, args, NULL);
   printf("\n");
   return ore_value_nil();
 }
 
 ore_value
-ore_dump_env(ore_context* ore, int num_in, ore_value* args) {
+ore_dump_env(ore_context* ore, int num_in, ore_value* args, void* u) {
   int i, level = 0;
   while (ore) {
     for (i = 0; i < level; i++) printf(" ");
@@ -586,7 +619,7 @@ ore_dump_env(ore_context* ore, int num_in, ore_value* args) {
       const char* key = kh_key(h, k);
       printf("%s: ", key);
       ore_value pa[] = { kh_val(h, k) };
-      ore_print(ore, 1, pa);
+      ore_print(ore, 1, pa, NULL);
       n++;
     }
     printf("}\n");
@@ -598,7 +631,7 @@ ore_dump_env(ore_context* ore, int num_in, ore_value* args) {
 
 void
 ore_p(ore_value v) {
-  ore_println(NULL, 1, &v);
+  ore_println(NULL, 1, &v, NULL);
 }
 
 ore_value
@@ -661,12 +694,13 @@ ore_define(ore_context* ore, const char* name, ore_value v) {
 }
 
 void
-ore_define_cfunc(ore_context* ore, const char* name, int num_in, ore_cfunc_t c) {
+ore_define_cfunc(ore_context* ore, const char* name, int num_in, ore_cfunc_t c, void* u) {
   int r;
   ore_value v = { ORE_TYPE_CFUNC };
   v.v.f.ore = ore;
   v.v.f.num_in = num_in;
   v.v.f.x.c = c;
+  v.v.f.u = u;
   ore_define(ore, name, v);
 }
 
@@ -705,7 +739,7 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
         for (i = 2; i < t->children_num - 1; i += 2) {
           args[n++] = ore_eval(ore, t->children[i]);
         }
-        v = ((ore_cfunc_t)fn.v.f.x.c) ((ore_context*) ore, num_in, args);
+        v = ((ore_cfunc_t)fn.v.f.x.c) ((ore_context*) ore, num_in, args, fn.v.f.u);
         free(args);
       }
       break;
@@ -1086,6 +1120,14 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     ore_value_ref(v);
     return v;
   }
+  if (is_a(t, "break")) {
+    ore->err = ORE_ERROR_BREAK;
+    return ore_value_nil();
+  }
+  if (is_a(t, "continue")) {
+    ore->err = ORE_ERROR_CONTINUE;
+    return ore_value_nil();
+  }
   if (is_a(t, "if_stmt")) {
     if (ore_is_true(ore_eval(ore, t->children[2]))) {
       return ore_eval(ore, ore_find_statements(t));
@@ -1231,6 +1273,8 @@ int main(int argc, char **argv) {
   mpc_parser_t* Else     = mpc_new("else");
   mpc_parser_t* While    = mpc_new("while");
   mpc_parser_t* ForIn    = mpc_new("for_in");
+  mpc_parser_t* Break    = mpc_new("break");
+  mpc_parser_t* Continue = mpc_new("continue");
   mpc_parser_t* Var      = mpc_new("var");
   mpc_parser_t* Vararg   = mpc_new("vararg");
   mpc_parser_t* Func     = mpc_new("func");
@@ -1247,7 +1291,7 @@ int main(int argc, char **argv) {
   mpc_err_t* err = mpca_lang(MPCA_LANG_DEFAULT, STRUCTURE,
       True, False, Nil,
       Number, Factor, String, Array, Pair, Hash, Ident, Cmp,
-      If, IfStmt, ElseIf, Else, While, ForIn,
+      If, IfStmt, ElseIf, Else, While, ForIn, Break, Continue,
       Term, Lexp, LetV, Value, Item, LetA, Var, Vararg,
       Lambda, Func, Call, Anoncall, Return, Comment, Eof,
       Stmt, Stmts, Program);
@@ -1258,12 +1302,24 @@ int main(int argc, char **argv) {
   }
 
   mpc_result_t result;
+  ore_parse_context pc;
+  pc.root = mpc_ast_new(">", "");
+  pc.program = Program;
+
   ore_context* ore = ore_new(NULL);
-  ore_define_cfunc(ore, "dump_env", 0, ore_dump_env);
-  ore_define_cfunc(ore, "print", -1, ore_print);
-  ore_define_cfunc(ore, "println", -1, ore_println);
-  ore_define_cfunc(ore, "len", 1, ore_len);
-  ore_define_cfunc(ore, "exit", 1, ore_exit);
+  ore_define_cfunc(ore, "dump_env", 0, ore_dump_env, NULL);
+  ore_define_cfunc(ore, "print", -1, ore_print, NULL);
+  ore_define_cfunc(ore, "println", -1, ore_println, NULL);
+  ore_define_cfunc(ore, "len", 1, ore_len, NULL);
+  ore_define_cfunc(ore, "load", 1, ore_load, &pc);
+  ore_define_cfunc(ore, "exit", 1, ore_exit, NULL);
+  ore_array_t* args = kl_init(value);
+  int i;
+  for (i = f+1; i < argc; i++) {
+    *kl_pushp(value, args) = ore_value_str_from_ptr(ore, strdup(argv[i]), -1);
+  }
+  ore_define(ore, "args", ore_value_array_from_klist(ore, args));
+
   if (f > 0) {
     if (!mpc_parse_contents(argv[f], Program, &result)) {
       mpc_err_print(result.error);
@@ -1271,12 +1327,12 @@ int main(int argc, char **argv) {
     } else {
       if (verbose)
         mpc_ast_print(result.output);
+      mpc_ast_add_child(pc.root, result.output);
       ore_eval(ore, result.output);
       mpc_ast_delete(result.output);
     }
   } else {
     char buf[BUFSIZ];
-    mpc_ast_t* root = mpc_ast_new(">", "");
     while (1) {
       printf("> ");
       if (!fgets(buf, sizeof(buf), stdin)) {
@@ -1293,17 +1349,17 @@ int main(int argc, char **argv) {
       if (verbose)
         mpc_ast_print(result.output);
       ore_eval(ore, result.output);
-      mpc_ast_add_child(root, result.output);
+      mpc_ast_add_child(pc.root, result.output);
     }
-    mpc_ast_delete(root);
+    mpc_ast_delete(pc.root);
   }
   ore_destroy(ore);
 
 leave:
-  mpc_cleanup(31,
+  mpc_cleanup(33,
       True, False, Nil,
       Number, Factor, String, Array, Pair, Hash, Ident, Cmp,
-      If, IfStmt, ElseIf, Else, While, ForIn,
+      If, IfStmt, ElseIf, Else, While, ForIn, Break, Continue,
       Term, Lexp, LetV, Value, Item, LetA, Var, Vararg,
       Lambda, Func, Call, Anoncall, Return, Comment, Eof,
       Stmt, Stmts, Program);
