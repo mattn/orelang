@@ -579,7 +579,6 @@ ore_get(ore_context* ore, const char* name) {
     p = p->parent;
   }
   fprintf(stderr, "Unknown identifier '%s'\n", name);
-  ore_dump_env(ore, 0, NULL);
   ore->err = ORE_ERROR_EXCEPTION;
   return ore_value_nil();
 }
