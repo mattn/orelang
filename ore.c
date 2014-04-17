@@ -1014,26 +1014,17 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
       if (is_a(f, "if_stmt")) {
         r = ore_is_true(ore_eval(ore, f->children[2]));
       } else if (is_a(f, "else_if")) {
-        r = ore_is_true(ore_eval(ore, f->children[2]));
+        r = ore_is_true(ore_eval(ore, f->children[3]));
       } else {
         r = 1;
       }
       if (r) {
-        mpc_ast_t* stmts = NULL;
         int j = 0;
         for (; j < f->children_num; j++) {
           if (is_a(f->children[j], "char") && f->children[j]->contents[0] == '{') {
-            j++;
+            ore_eval(ore, f->children[j+1]);
             break;
           }
-        }
-        for (; j < f->children_num; j++) {
-          if (stmts == NULL && !is_a(f->children[i], "char")) {
-            stmts = f->children[i];
-          }
-        }
-        if (stmts) {
-          ore_eval(ore, stmts);
         }
         return ore_value_nil();
       }
