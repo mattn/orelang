@@ -37,6 +37,7 @@
 "if_stmt   : \"if\" '(' <lexp> ')' '{' <stmts> '}' ;                    \n" \
 "if        : <if_stmt> <else_if>? <else>? ;                             \n" \
 "while     : \"while\" '(' <lexp> ')' '{' <stmts> '}' ;                 \n" \
+"for_in    : \"for\" '(' <ident> \"in\" <lexp> ')' '{' <stmts> '}' ;    \n" \
 "var       : \"var\" <ident> '=' <lexp> ';' ;                           \n" \
 "vararg    : \"...\" ;                                                  \n" \
 "stmts     : <stmt>* ;                                                  \n" \
@@ -49,7 +50,7 @@
 "return    : \"return\" <lexp> ';' ;                                    \n" \
 "comment   : /#[^\n]*/ ;                                                \n" \
 "eof       : /$/ ;                                                      \n" \
-"stmt      : (<let_v> | <let_a> | <var> | <if> | <while>                  " \
+"stmt      : (<let_v> | <let_a> | <var> | <if> | <while> | <for_in>       " \
 "            | <func> | <return> | <comment> | (<lexp> ';')) ;          \n" \
 "program   : <stmts> <eof> ;                                            \n"
 
@@ -133,6 +134,8 @@ KLIST_INIT(value, ore_value, ore_value_free)
 
 typedef klist_t(value) ore_array_t;
 typedef kliter_t(value) ore_array_iter_t;
+typedef khash_t(value) ore_hash_t;
+typedef khiter_t ore_hash_iter_t;
 
 typedef struct _ore_context {
   khash_t(value)* env;
@@ -410,9 +413,8 @@ ore_len(ore_context* ore, int num_in, ore_value* args) {
       {
         ore_array_t* a = (ore_array_t*) args[0].v.a;
         ore_array_iter_t *k;
-        ore_array_iter_t *b = kl_begin(a);
         int n = 0;
-        for (k = b; k != kl_end(a); k = kl_next(k)) n++;
+        for (k = kl_begin(a); k != kl_end(a); k = kl_next(k)) n++;
         v.v.i = n;
       }
       return v;
@@ -477,8 +479,8 @@ ore_print(ore_context* ore, int num_in, ore_value* args) {
       case ORE_TYPE_ARRAY:
         {
           ore_array_t* a = (ore_array_t*) v.v.a->p;
-          ore_array_iter_t *k;
-          ore_array_iter_t *b = kl_begin(a);
+          ore_array_iter_t* k;
+          ore_array_iter_t* b = kl_begin(a);
           printf("[");
           for (k = b; k != kl_end(a); k = kl_next(k)) {
             if (k != b) {
@@ -492,11 +494,11 @@ ore_print(ore_context* ore, int num_in, ore_value* args) {
         break;
       case ORE_TYPE_HASH:
         {
-          khash_t(value)* h = (khash_t(value)*) v.v.h->p;
-          khiter_t k, b = kh_begin(h);
+          ore_hash_t* h = (ore_hash_t*) v.v.h->p;
+          ore_hash_iter_t k;
           int n = 0;
           printf("{");
-          for (k = b; k != kh_end(h); k++) {
+          for (k = kh_begin(h); k != kh_end(h); k++) {
 		    if (!kh_exist(h, k)) continue;						\
             if (n > 0) {
               printf(",");
@@ -539,11 +541,11 @@ ore_dump_env(ore_context* ore, int num_in, ore_value* args) {
   int i, level = 0;
   while (ore) {
     for (i = 0; i < level; i++) printf(" ");
-    khash_t(value)* h = (khash_t(value)*) ore->env;
-    khiter_t k, b = kh_begin(h);
+    ore_hash_t* h = (ore_hash_t*) ore->env;
+    ore_hash_iter_t k;
     int n = 0;
     printf("%p : {", ore->env);
-    for (k = b; k != kh_end(h); k++) {
+    for (k = kh_begin(h); k != kh_end(h); k++) {
       if (!kh_exist(h, k)) continue;						\
       if (n > 0) {
         printf(",");
@@ -735,9 +737,8 @@ ore_value* ore_index_ref(ore_context* ore, ore_value v, ore_value e, int update)
     }
     ore_array_t* a = (ore_array_t*) v.v.a->p;
     int n = 0;
-    kliter_t(value)* k;
-    kliter_t(value)* b = kl_begin(a);
-    for (k = b; k != kl_end(a); k = kl_next(k)) {
+    ore_array_iter_t* k;
+    for (k = kl_begin(a); k != kl_end(a); k = kl_next(k)) {
       if (n == e.v.i) {
         if (update) {
           ore_value old = kl_val(k);
@@ -757,7 +758,7 @@ ore_value* ore_index_ref(ore_context* ore, ore_value v, ore_value e, int update)
       ore->err = ORE_ERROR_EXCEPTION;
       return NULL;
     }
-    khash_t(value)* h = (khash_t(value)*) v.v.h->p;
+    ore_hash_t* h = (ore_hash_t*) v.v.h->p;
     if (update) {
       int r;
       khint_t k = kh_get(value, h, e.v.s->p);
@@ -941,7 +942,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     return ore_value_array_from_klist(a);
   }
   if (is_a(t, "hash")) {
-    khash_t(value)* h = kh_init(value);
+    ore_hash_t* h = kh_init(value);
     for (i = 1; i < t->children_num - 1; i += 2) {
       ore_value key = ore_eval(ore, t->children[i]->children[0]);
       ore_value val = ore_eval(ore, t->children[i]->children[2]);
@@ -1032,27 +1033,45 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
       } else {
         r = 1;
       }
-      if (r) {
+      if (r)
         return ore_eval(ore, ore_find_statements(f));
-      }
     }
     return ore_value_nil();
   }
   if (is_a(t, "while")) {
     ore_value v;
-    int i;
     while (ore_is_true(ore_eval(ore, t->children[2]))) {
-      ore_eval(ore, ore_find_statements(t));
+      v = ore_eval(ore, ore_find_statements(t));
+      if (ore->err != ORE_ERROR_NONE)
+        return v;
     }
+    return ore_value_nil();
+  }
+  if (is_a(t, "for_in")) {
+    ore_value v;
+    ore_value l = ore_eval(ore, t->children[4]);
+    if (l.t != ORE_TYPE_ARRAY) {
+      fprintf(stderr, "Expected array for argument\n", t->tag);
+      ore->err = ORE_ERROR_EXCEPTION;
+    }
+    ore_array_t* a = (ore_array_t*) l.v.a->p;
+    ore_array_iter_t *k;
+    ore_context* env = ore_new(ore);
+    for (k = kl_begin(a); k != kl_end(a); k = kl_next(k)) {
+      ore_define(env, t->children[2]->contents, kl_val(k));
+      ore_eval(env, ore_find_statements(t));
+      if (ore->err != ORE_ERROR_NONE)
+        break;
+    }
+    ore_destroy(env);
     return ore_value_nil();
   }
   if (is_a(t, "stmts") || t->tag[0] == '>') {
     ore_value v;
     for (i = 0; i < t->children_num; i++) {
       v = ore_eval(ore, t->children[i]);
-      if (ore->err != ORE_ERROR_NONE) {
+      if (ore->err != ORE_ERROR_NONE)
         return v;
-      }
     }
     return ore_value_nil();
   }
@@ -1135,6 +1154,7 @@ int main(int argc, char **argv) {
   mpc_parser_t* ElseIf   = mpc_new("else_if");
   mpc_parser_t* Else     = mpc_new("else");
   mpc_parser_t* While    = mpc_new("while");
+  mpc_parser_t* ForIn    = mpc_new("for_in");
   mpc_parser_t* Var      = mpc_new("var");
   mpc_parser_t* Vararg   = mpc_new("vararg");
   mpc_parser_t* Func     = mpc_new("func");
@@ -1151,7 +1171,7 @@ int main(int argc, char **argv) {
   mpc_err_t* err = mpca_lang(MPCA_LANG_DEFAULT, STRUCTURE,
       True, False, Nil,
       Number, Factor, String, Array, Pair, Hash, Ident, Cmp,
-      If, IfStmt, ElseIf, Else, While,
+      If, IfStmt, ElseIf, Else, While, ForIn,
       Term, Lexp, LetV, Value, Item, LetA, Var, Vararg,
       Lambda, Func, Call, Anoncall, Return, Comment, Eof,
       Stmt, Stmts, Program);
@@ -1203,10 +1223,10 @@ int main(int argc, char **argv) {
   ore_destroy(ore);
 
 leave:
-  mpc_cleanup(30,
+  mpc_cleanup(31,
       True, False, Nil,
       Number, Factor, String, Array, Pair, Hash, Ident, Cmp,
-      If, IfStmt, ElseIf, Else, While,
+      If, IfStmt, ElseIf, Else, While, ForIn,
       Term, Lexp, LetV, Value, Item, LetA, Var, Vararg,
       Lambda, Func, Call, Anoncall, Return, Comment, Eof,
       Stmt, Stmts, Program);
