@@ -1,0 +1,6 @@
+a = 5;
+while (a) {
+  println(a);
+  a = a - 1;
+}
+
