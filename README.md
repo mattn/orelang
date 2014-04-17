@@ -1,5 +1,7 @@
 # orelang
 
+[![Build Status](https://travis-ci.org/mattn/orelang.svg?branch=master)](https://travis-ci.org/mattn/orelang)
+
 俺言語
 
 
