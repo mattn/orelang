@@ -1126,7 +1126,6 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   }
   if (is_a(t, "continue")) {
     ore->err = ORE_ERROR_CONTINUE;
-    puts("continue");
     return ore_value_nil();
   }
   if (is_a(t, "if_stmt")) {
@@ -1155,14 +1154,20 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   }
   if (is_a(t, "while")) {
     ore_value v;
-    while (ore_is_true(ore_eval(ore, t->children[2]))) {
-      v = ore_eval(ore, ore_find_statements(t));
-      if (ore->err == ORE_ERROR_RETURN)
-        return v;
-      if (ore->err == ORE_ERROR_BREAK)
+    ore_context* env = ore_new(ore);
+    while (ore_is_true(ore_eval(env, t->children[2]))) {
+      v = ore_eval(env, ore_find_statements(t));
+      if (env->err != ORE_ERROR_NONE) {
+        if (env->err == ORE_ERROR_CONTINUE) {
+          env->err = ORE_ERROR_NONE;
+          continue;
+        }
         break;
+      }
     }
-    ore->err = ORE_ERROR_NONE;
+    if (env->err == ORE_ERROR_RETURN)
+      ore->err = ORE_ERROR_RETURN;
+    ore_destroy(env);
     return ore_value_nil();
   }
   if (is_a(t, "for_in")) {
