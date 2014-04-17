@@ -35,7 +35,8 @@
 "else_if   : \"else\" \"if\" '(' <lexp> ')' '{' <stmts> '}' ;           \n" \
 "else      : \"else\" '{' <stmts> '}' ;                                 \n" \
 "if_stmt   : \"if\" '(' <lexp> ')' '{' <stmts> '}' ;                    \n" \
-"if        : <if_stmt> <else_if>? <else>? ;                                   \n" \
+"if        : <if_stmt> <else_if>? <else>? ;                             \n" \
+"while     : \"while\" '(' <lexp> ')' '{' <stmts> '}' ;                 \n" \
 "var       : \"var\" <ident> '=' <lexp> ';' ;                           \n" \
 "vararg    : \"...\" ;                                                  \n" \
 "stmts     : <stmt>* ;                                                  \n" \
@@ -48,7 +49,7 @@
 "return    : \"return\" <lexp> ';' ;                                    \n" \
 "comment   : /#[^\n]*/ ;                                                \n" \
 "eof       : /$/ ;                                                      \n" \
-"stmt      : (<let_v> | <let_a> | <var> | <if>                            " \
+"stmt      : (<let_v> | <let_a> | <var> | <if> | <while>                  " \
 "            | <func> | <return> | <comment> | (<lexp> ';')) ;          \n" \
 "program   : <stmts> <eof> ;                                            \n"
 
@@ -896,8 +897,21 @@ ore_cmp(ore_value lhs, ore_value rhs) {
     return ore_value_false();
 }
 
+mpc_ast_t*
+ore_find_statements(mpc_ast_t* t) {
+  mpc_ast_t* stmt = NULL;
+  int i;
+  for (i = 0; i < t->children_num; i++) {
+    if (is_a(t->children[i], "char") && t->children[i]->contents[0] == '{') {
+      return t->children[i+1];
+    }
+  }
+  return NULL;
+}
+
 ore_value
 ore_eval(ore_context* ore, mpc_ast_t* t) {
+  if (!ore) return ore_value_nil();
   int i, r;
   //if (verbose)
     //printf("tag: %s\n", t->tag);
@@ -1019,15 +1033,16 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
         r = 1;
       }
       if (r) {
-        int j = 0;
-        for (; j < f->children_num; j++) {
-          if (is_a(f->children[j], "char") && f->children[j]->contents[0] == '{') {
-            ore_eval(ore, f->children[j+1]);
-            break;
-          }
-        }
-        return ore_value_nil();
+        return ore_eval(ore, ore_find_statements(f));
       }
+    }
+    return ore_value_nil();
+  }
+  if (is_a(t, "while")) {
+    ore_value v;
+    int i;
+    while (ore_is_true(ore_eval(ore, t->children[2]))) {
+      ore_eval(ore, ore_find_statements(t));
     }
     return ore_value_nil();
   }
@@ -1119,6 +1134,7 @@ int main(int argc, char **argv) {
   mpc_parser_t* IfStmt   = mpc_new("if_stmt");
   mpc_parser_t* ElseIf   = mpc_new("else_if");
   mpc_parser_t* Else     = mpc_new("else");
+  mpc_parser_t* While    = mpc_new("while");
   mpc_parser_t* Var      = mpc_new("var");
   mpc_parser_t* Vararg   = mpc_new("vararg");
   mpc_parser_t* Func     = mpc_new("func");
@@ -1135,7 +1151,7 @@ int main(int argc, char **argv) {
   mpc_err_t* err = mpca_lang(MPCA_LANG_DEFAULT, STRUCTURE,
       True, False, Nil,
       Number, Factor, String, Array, Pair, Hash, Ident, Cmp,
-      If, IfStmt, ElseIf, Else,
+      If, IfStmt, ElseIf, Else, While,
       Term, Lexp, LetV, Value, Item, LetA, Var, Vararg,
       Lambda, Func, Call, Anoncall, Return, Comment, Eof,
       Stmt, Stmts, Program);
@@ -1187,10 +1203,10 @@ int main(int argc, char **argv) {
   ore_destroy(ore);
 
 leave:
-  mpc_cleanup(29,
+  mpc_cleanup(30,
       True, False, Nil,
       Number, Factor, String, Array, Pair, Hash, Ident, Cmp,
-      If, IfStmt, ElseIf, Else,
+      If, IfStmt, ElseIf, Else, While,
       Term, Lexp, LetV, Value, Item, LetA, Var, Vararg,
       Lambda, Func, Call, Anoncall, Return, Comment, Eof,
       Stmt, Stmts, Program);
