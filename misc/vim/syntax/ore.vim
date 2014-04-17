@@ -12,7 +12,7 @@ hi def link     oreDeclaration       Type
 syn keyword     oreStatement         return break continue throw
 syn keyword     oreConditional       if else switch try catch finally
 syn keyword     oreLabel             case default
-syn keyword     oreRepeat            for range
+syn keyword     oreRepeat            for while
 
 hi def link     oreStatement         Statement
 hi def link     oreConditional       Conditional
