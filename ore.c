@@ -1126,6 +1126,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   }
   if (is_a(t, "continue")) {
     ore->err = ORE_ERROR_CONTINUE;
+    puts("continue");
     return ore_value_nil();
   }
   if (is_a(t, "if_stmt")) {
@@ -1156,9 +1157,12 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     ore_value v;
     while (ore_is_true(ore_eval(ore, t->children[2]))) {
       v = ore_eval(ore, ore_find_statements(t));
-      if (ore->err != ORE_ERROR_NONE)
+      if (ore->err == ORE_ERROR_RETURN)
         return v;
+      if (ore->err == ORE_ERROR_BREAK)
+        break;
     }
+    ore->err = ORE_ERROR_NONE;
     return ore_value_nil();
   }
   if (is_a(t, "for_in")) {
@@ -1174,11 +1178,18 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     for (k = kl_begin(a); k != kl_end(a); k = kl_next(k)) {
       ore_define(env, t->children[2]->contents, kl_val(k));
       ore_eval(env, ore_find_statements(t));
-      if (ore->err != ORE_ERROR_NONE)
+      if (env->err != ORE_ERROR_NONE) {
+        if (env->err == ORE_ERROR_CONTINUE) {
+          env->err = ORE_ERROR_NONE;
+          continue;
+        }
         break;
+      }
     }
+    if (env->err == ORE_ERROR_RETURN)
+      ore->err = ORE_ERROR_RETURN;
     ore_destroy(env);
-    return ore_value_nil();
+    return v;
   }
   if (is_a(t, "stmts") || t->tag[0] == '>') {
     ore_value v;
