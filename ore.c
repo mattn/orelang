@@ -441,7 +441,7 @@ ore_parse_str(ore_context* ore, const char* s) {
 }
 
 ore_value
-ore_len(ore_context* ore, int num_in, ore_value* args, void* u) {
+ore_cfunc_len(ore_context* ore, int num_in, ore_value* args, void* u) {
   ore_value v = { ORE_TYPE_INT };
   switch (args[0].t) {
     case ORE_TYPE_STR:
@@ -463,7 +463,7 @@ ore_len(ore_context* ore, int num_in, ore_value* args, void* u) {
 }
 
 ore_value
-ore_load(ore_context* ore, int num_in, ore_value* args, void* u) {
+ore_cfunc_load(ore_context* ore, int num_in, ore_value* args, void* u) {
   ore_parse_context* pctx = (ore_parse_context*) u;
 
   mpc_result_t result;
@@ -486,7 +486,7 @@ ore_load(ore_context* ore, int num_in, ore_value* args, void* u) {
 }
 
 ore_value
-ore_exit(ore_context* ore, int num_in, ore_value* args, void* u) {
+ore_cfunc_exit(ore_context* ore, int num_in, ore_value* args, void* u) {
   exit(0);
   return ore_value_nil();
 }
@@ -593,12 +593,12 @@ ore_value_to_str(ore_context* ore, ore_value v) {
 }
 
 ore_value
-ore_to_string(ore_context* ore, int num_in, ore_value* args, void* u) {
+ore_cfunc_to_string(ore_context* ore, int num_in, ore_value* args, void* u) {
   return ore_value_str_from_ptr(ore, ore_value_to_str(ore, args[0]), -1);
 }
 
 ore_value
-ore_print(ore_context* ore, int num_in, ore_value* args, void* u) {
+ore_cfunc_print(ore_context* ore, int num_in, ore_value* args, void* u) {
   int i;
   for (i = 0; i < num_in; i++) {
     if (i != 0) printf(", ");
@@ -633,7 +633,7 @@ ore_print(ore_context* ore, int num_in, ore_value* args, void* u) {
               printf(",");
             }
             ore_value pa[] = { kl_val(k) };
-            ore_print(ore, 1, pa, NULL);
+            ore_cfunc_print(ore, 1, pa, NULL);
           }
           printf("]");
         }
@@ -652,7 +652,7 @@ ore_print(ore_context* ore, int num_in, ore_value* args, void* u) {
             const char* key = kh_key(h, k);
             printf("%s: ", key);
             ore_value pa[] = { kh_val(h, k) };
-            ore_print(ore, 1, pa, NULL);
+            ore_cfunc_print(ore, 1, pa, NULL);
             n++;
           }
           printf("}");
@@ -676,14 +676,14 @@ ore_print(ore_context* ore, int num_in, ore_value* args, void* u) {
 }
 
 ore_value
-ore_println(ore_context* ore, int num_in, ore_value* args, void* u) {
-  ore_print(ore, num_in, args, NULL);
+ore_cfunc_println(ore_context* ore, int num_in, ore_value* args, void* u) {
+  ore_cfunc_print(ore, num_in, args, NULL);
   printf("\n");
   return ore_value_nil();
 }
 
 ore_value
-ore_dump_env(ore_context* ore, int num_in, ore_value* args, void* u) {
+ore_cfunc_dump_env(ore_context* ore, int num_in, ore_value* args, void* u) {
   int i, level = 0;
   while (ore) {
     for (i = 0; i < level; i++) printf(" ");
@@ -699,7 +699,7 @@ ore_dump_env(ore_context* ore, int num_in, ore_value* args, void* u) {
       const char* key = kh_key(h, k);
       printf("%s: ", key);
       ore_value pa[] = { kh_val(h, k) };
-      ore_print(ore, 1, pa, NULL);
+      ore_cfunc_print(ore, 1, pa, NULL);
       n++;
     }
     printf("}\n");
@@ -711,7 +711,7 @@ ore_dump_env(ore_context* ore, int num_in, ore_value* args, void* u) {
 
 void
 ore_p(ore_value v) {
-  ore_println(NULL, 1, &v, NULL);
+  ore_cfunc_println(NULL, 1, &v, NULL);
 }
 
 ore_value
@@ -1014,49 +1014,47 @@ ore_expr(ore_context* ore, mpc_ast_t* t) {
 
 int
 ore_cmp_eq(ore_context* ore, ore_value lhs, ore_value rhs) {
-  if (lhs.t != rhs.t) return 0;
   switch (lhs.t) {
     case ORE_TYPE_NIL:
-      return 1;
+      return rhs.t == ORE_TYPE_NIL;
     case ORE_TYPE_BOOL:
-      if (lhs.v.b == rhs.v.b)
-        return 1;
+      if (rhs.t == ORE_TYPE_BOOL && lhs.v.b == rhs.v.b) return 1;
       return 0;
     case ORE_TYPE_INT:
-      if (lhs.v.i == rhs.v.i)
-        return 1;
+      if (rhs.t == ORE_TYPE_INT && lhs.v.i == rhs.v.i) return 1;
+      if (rhs.t == ORE_TYPE_FLOAT && lhs.v.i == rhs.v.d) return 1;
       return 0;
     case ORE_TYPE_FLOAT:
-      if (lhs.v.d == rhs.v.d)
-        return 1;
+      if (rhs.t == ORE_TYPE_INT && lhs.v.d == rhs.v.i) return 1;
+      if (rhs.t == ORE_TYPE_FLOAT && lhs.v.d == rhs.v.d) return 1;
       return 0;
     case ORE_TYPE_STR:
-      if (lhs.v.s->l == rhs.v.s->l &&
+      if (lhs.t == rhs.t && lhs.v.s->l == rhs.v.s->l &&
           !memcmp(lhs.v.s->p, rhs.v.s->p, lhs.v.s->l))
         return 1;
       return 0;
     case ORE_TYPE_ARRAY:
-      if (lhs.v.a->p == rhs.v.a->p)
+      if (lhs.t == rhs.t && lhs.v.a->p == rhs.v.a->p)
         return 1;
       return 0;
     case ORE_TYPE_HASH:
-      if (lhs.v.h->p == rhs.v.h->p)
+      if (lhs.t == rhs.t && lhs.v.h->p == rhs.v.h->p)
         return 1;
       return 0;
     case ORE_TYPE_FUNC:
-      if (lhs.v.f.x.o == rhs.v.f.x.o)
+      if (lhs.t == rhs.t && lhs.v.f.x.o == rhs.v.f.x.o)
         return 1;
       return 0;
     case ORE_TYPE_CFUNC:
-      if (lhs.v.f.x.c == rhs.v.f.x.c)
+      if (lhs.t == rhs.t && lhs.v.f.x.c == rhs.v.f.x.c)
         return 1;
       return 0;
     case ORE_TYPE_ENV:
-      if (lhs.v.e->p == rhs.v.e->p)
+      if (lhs.t == rhs.t && lhs.v.e->p == rhs.v.e->p)
         return 1;
       return 0;
-    }
-    return 0;
+  }
+  return 0;
 }
 
 int
@@ -1408,13 +1406,13 @@ int main(int argc, char **argv) {
   pc.program = Program;
 
   ore_context* ore = ore_new(NULL);
-  ore_define_cfunc(ore, "dump_env", 0, ore_dump_env, NULL);
-  ore_define_cfunc(ore, "to_string", 1, ore_to_string, NULL);
-  ore_define_cfunc(ore, "print", -1, ore_print, NULL);
-  ore_define_cfunc(ore, "println", -1, ore_println, NULL);
-  ore_define_cfunc(ore, "len", 1, ore_len, NULL);
-  ore_define_cfunc(ore, "load", 1, ore_load, &pc);
-  ore_define_cfunc(ore, "exit", 1, ore_exit, NULL);
+  ore_define_cfunc(ore, "dump_env", 0, ore_cfunc_dump_env, NULL);
+  ore_define_cfunc(ore, "to_string", 1, ore_cfunc_to_string, NULL);
+  ore_define_cfunc(ore, "print", -1, ore_cfunc_print, NULL);
+  ore_define_cfunc(ore, "println", -1, ore_cfunc_println, NULL);
+  ore_define_cfunc(ore, "len", 1, ore_cfunc_len, NULL);
+  ore_define_cfunc(ore, "load", 1, ore_cfunc_load, &pc);
+  ore_define_cfunc(ore, "exit", 1, ore_cfunc_exit, NULL);
   ore_array_t* args = kl_init(value);
   int i;
   for (i = f+1; i < argc; i++) {
