@@ -783,7 +783,6 @@ ore_value
 ore_expr(ore_context* ore, mpc_ast_t* t) {
   int i;
   ore_value v = ore_eval(ore, t->children[0]);
-printf("type = %d\n", v.t);
   for (i = 1; i < t->children_num; i += 2) {
     char* op = t->children[i]->contents;
     ore_value rhs = ore_eval(ore, t->children[i+1]);
