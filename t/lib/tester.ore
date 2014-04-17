@@ -1,0 +1,28 @@
+var count = (func() {
+  var n = 0;
+  return func() {
+    n = n + 1;
+    return n;
+  };
+})();
+
+func is(expect, got, name) {
+  if (expect == got) {
+    println("OK", name);
+  } else {
+    println("NG", name);
+  }
+}
+
+func ok(expect, name) {
+  if (expect) {
+    println("OK", name);
+  } else {
+    println("NG", name);
+  }
+}
+
+if (len(args) > 0) {
+  println(args[0]);
+  load(args[0]);
+}
