@@ -1,6 +1,7 @@
 #include "mpc.h"
 #include "khash.h"
 #include "klist.h"
+#include "kstring.h"
 
 #define STRUCTURE \
 "                                                                       \n" \
@@ -517,6 +518,85 @@ ore_kind(ore_value v) {
   return "unknown";
 }
 
+char*
+ore_value_to_str(ore_context* ore, ore_value v) {
+  kstring_t ks = { 0, 0, NULL };
+
+  switch (v.t) {
+    case ORE_TYPE_NIL:
+      kputs("nil", &ks);
+      break;
+    case ORE_TYPE_BOOL:
+      if (v.v.b)
+        kputs("true", &ks);
+      else
+        kputs("false", &ks);
+      break;
+    case ORE_TYPE_INT:
+      ksprintf(&ks, "%d", v.v.i);
+      break;
+    case ORE_TYPE_FLOAT:
+      ksprintf(&ks, "%f", v.v.d);
+      break;
+    case ORE_TYPE_STR:
+      kputs(v.v.s->p, &ks);
+      break;
+    case ORE_TYPE_ARRAY:
+      {
+        ore_array_t* a = (ore_array_t*) v.v.a->p;
+        ore_array_iter_t* k;
+        ore_array_iter_t* b = kl_begin(a);
+        kputc('[', &ks);
+        for (k = b; k != kl_end(a); k = kl_next(k)) {
+          if (k != b) {
+            kputc(',', &ks);
+          }
+          kputs(ore_value_to_str(ore, kl_val(k)), &ks);
+        }
+        kputc(']', &ks);
+      }
+      break;
+    case ORE_TYPE_HASH:
+      {
+        ore_hash_t* h = (ore_hash_t*) v.v.h->p;
+        ore_hash_iter_t k;
+        int n = 0;
+        kputc('{', &ks);
+        for (k = kh_begin(h); k != kh_end(h); k++) {
+  	    if (!kh_exist(h, k)) continue;						\
+          if (n > 0) {
+            kputc(',', &ks);
+          }
+          const char* key = kh_key(h, k);
+          kputs(key, &ks);
+          kputs(": ", &ks);
+          kputs(ore_value_to_str(ore, kh_val(h, k)), &ks);
+          n++;
+        }
+        kputc('}', &ks);
+      }
+      break;
+    case ORE_TYPE_FUNC:
+      ksprintf(&ks, "<func-0x%p>", v.v.f.x.o);
+      break;
+    case ORE_TYPE_CFUNC:
+      ksprintf(&ks, "<func-0x%p>", v.v.f.x.c);
+      break;
+    case ORE_TYPE_ENV:
+      ksprintf(&ks, "<env-0x%p>", v.v.e->p);
+      break;
+    default:
+      kputs("<unknown>", &ks);
+      break;
+  }
+  return ks.s;
+}
+
+ore_value
+ore_to_string(ore_context* ore, int num_in, ore_value* args, void* u) {
+  return ore_value_str_from_ptr(ore, ore_value_to_str(ore, args[0]), -1);
+}
+
 ore_value
 ore_print(ore_context* ore, int num_in, ore_value* args, void* u) {
   int i;
@@ -905,6 +985,11 @@ ore_expr(ore_context* ore, mpc_ast_t* t) {
               sprintf(buf, "%f", rhs.v.d);
             else if (rhs.t == ORE_TYPE_STR)
               p = rhs.v.s->p;
+            else {
+              fprintf(stderr, "Unknown operator '%s' for string\n", op);
+              ore->err = ORE_ERROR_EXCEPTION;
+              return ore_value_nil();
+            }
 
             size_t l = strlen(p) + strlen(v.v.s->p);
             char* s = calloc(1, l + 1);
@@ -1324,6 +1409,7 @@ int main(int argc, char **argv) {
 
   ore_context* ore = ore_new(NULL);
   ore_define_cfunc(ore, "dump_env", 0, ore_dump_env, NULL);
+  ore_define_cfunc(ore, "to_string", 1, ore_to_string, NULL);
   ore_define_cfunc(ore, "print", -1, ore_print, NULL);
   ore_define_cfunc(ore, "println", -1, ore_println, NULL);
   ore_define_cfunc(ore, "len", 1, ore_len, NULL);
