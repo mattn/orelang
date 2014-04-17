@@ -487,7 +487,12 @@ ore_cfunc_load(ore_context* ore, int num_in, ore_value* args, void* u) {
 
 ore_value
 ore_cfunc_exit(ore_context* ore, int num_in, ore_value* args, void* u) {
-  exit(0);
+  if (args[0].t != ORE_TYPE_INT) {
+    fprintf(stderr, "Argument should be int\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  exit(args[0].v.i);
   return ore_value_nil();
 }
 

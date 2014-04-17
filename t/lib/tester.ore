@@ -11,6 +11,7 @@ func is(expect, got, name) {
     println("OK " + name);
   } else {
     println("NG " + name + ": [" + to_string(expect) + "], [" + to_string(got) + "]");
+	exit(1);
   }
 }
 
@@ -19,6 +20,7 @@ func ok(expect, name) {
     println("OK", name);
   } else {
     println("NG", name);
+	exit(1);
   }
 }
 
