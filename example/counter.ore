@@ -7,5 +7,5 @@ count = (func() {
   };
 })();
 
-println(count());
-println(count());
+println("count", count());
+println("count", count());

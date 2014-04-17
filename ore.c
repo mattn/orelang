@@ -1356,7 +1356,7 @@ int main(int argc, char **argv) {
   ore_destroy(ore);
 
 leave:
-  mpc_cleanup(33,
+  mpc_cleanup(36,
       True, False, Nil,
       Number, Factor, String, Array, Pair, Hash, Ident, Cmp,
       If, IfStmt, ElseIf, Else, While, ForIn, Break, Continue,
