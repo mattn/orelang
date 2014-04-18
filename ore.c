@@ -813,7 +813,7 @@ ore_cfunc_print(ore_context* ore, int num_in, ore_value* args, void* u) {
 ore_value
 ore_cfunc_println(ore_context* ore, int num_in, ore_value* args, void* u) {
   ore_cfunc_print(ore, num_in, args, NULL);
-  printf("\n");
+  puts("");
   return ore_value_nil();
 }
 
@@ -1035,6 +1035,10 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
         free(args);
       }
       break;
+    default:
+      fprintf(stderr, "Invalid function call\n");
+      ore->err = ORE_ERROR_EXCEPTION;
+      return ore_value_nil();
   }
   return v;
 }
@@ -1641,7 +1645,6 @@ int main(int argc, char **argv) {
       fprintf(stderr, "Failed to allocate memory\n");
       exit(1);
     }
-    ore->err = ORE_ERROR_EXCEPTION;
     *kl_pushp(value, args) = ore_value_str_from_ptr(ore, parg, -1);
   }
   ore_define(ore, "args", ore_value_array_from_klist(ore, args));
