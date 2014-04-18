@@ -716,7 +716,7 @@ ore_value_to_str(ore_context* ore, ore_value v) {
         int n = 0;
         kputc('{', &ks);
         for (k = kh_begin(h); k != kh_end(h); k++) {
-  	    if (!kh_exist(h, k)) continue;						\
+          if (!kh_exist(h, k)) continue;
           if (n > 0) {
             kputc(',', &ks);
           }
@@ -786,7 +786,7 @@ ore_cfunc_dump_env(ore_context* ore, int num_in, ore_value* args, void* u) {
     int n = 0;
     printf("%p : {", ore->env);
     for (k = kh_begin(h); k != kh_end(h); k++) {
-      if (!kh_exist(h, k)) continue;						\
+      if (!kh_exist(h, k)) continue;
       if (n > 0) {
         printf(",");
       }
