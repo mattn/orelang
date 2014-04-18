@@ -4,7 +4,7 @@
 #include "kstring.h"
 
 #define STRUCTURE \
-"                                                                       \n" \
+"                                                                        \n" \
 "number     : /-?[0-9]+(\\.[0-9]*)?(e[0-9]+)?/ ;                         \n" \
 "true       : \"true\" ;                                                 \n" \
 "false      : \"false\" ;                                                \n" \
@@ -32,7 +32,7 @@
 "array      : '[' <lexp>? (',' <lexp>)* ']' ;                            \n" \
 "pair       : <string> ':' <lexp> ;                                      \n" \
 "hash       : '{' <pair>? (',' <pair>)* '}' ;                            \n" \
-"ident      : /[a-zA-Z_][a-zA-Z0-9_]*/ ;                                  \n" \
+"ident      : /[a-zA-Z_][a-zA-Z0-9_]*/ ;                                 \n" \
 "                                                                        \n" \
 "term       : (<lambda> | <item> | <methodcall> | <cmp> | <prop>           " \
 "         | <anoncall> | <call>                                          \n" \
@@ -455,6 +455,60 @@ ore_define_class(ore_context* ore, mpc_ast_t* t) {
   return v;
 }
 
+ore_value*
+ore_bind_args(ore_context* ore, mpc_ast_t* f, ore_context* this, mpc_ast_t* t) {
+  int num_in = t->children_num / 2 - 1, n = 0, i;
+  ore_value* args = (ore_value*) malloc(sizeof(ore_value) * num_in);
+  if (!args) {
+    fprintf(stderr, "Failed to allocate memory\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return NULL;
+  }
+  for (i = 0; i < num_in; i++) {
+    args[i] = ore_value_nil();
+  }
+  i = 0;
+  for (i = 0; i < t->children_num; i++) {
+    if (is_a(t->children[i], "char") && t->children[i]->contents[0] == '(') {
+      i++;
+      break;
+    }
+  }
+  for (; i < t->children_num; i += 2) {
+    if (is_a(t->children[i], "char") && t->children[i]->contents[0] == ')') {
+      i++;
+      break;
+    }
+    args[n++] = ore_eval(ore, t->children[i]);
+  }
+
+  for (i = 0; i < f->children_num; i++) {
+    if (is_a(f->children[i], "char") && f->children[i]->contents[0] == '(') {
+      i++;
+      break;
+    }
+  }
+  n = 0;
+  for (; i < f->children_num; i += 2) {
+    if (is_a(f->children[i], "char") && f->children[i]->contents[0] == ')') {
+      i++;
+      break;
+    }
+    if (is_a(f->children[i], "vararg")) {
+      ore_array_t* a = kl_init(value);
+      int j;
+      for (j = 0; j < num_in; j++) {
+        *kl_pushp(value, a) = args[j];
+      }
+      ore_define(this, f->children[i-1]->contents, ore_value_array_from_klist(ore, a));
+    } else if (is_a(f->children[i], "ident")) {
+      if (n < num_in)
+        ore_define(this, f->children[i]->contents, args[n++]);
+    }
+  }
+  return args;
+}
+
 ore_value
 ore_object_new(ore_context* ore, mpc_ast_t* t) {
   ore_context* g = ore;
@@ -481,6 +535,7 @@ ore_object_new(ore_context* ore, mpc_ast_t* t) {
   ore_define(this, "this", v);
   ore_value init = ore_prop(this, "__init__");
   if (init.t == ORE_TYPE_FUNC) {
+    ore_value* args = ore_bind_args(ore, init.v.f.x.o, this, t);
     ore_func_call(this, init, 0, NULL);
   }
   return v;
@@ -836,6 +891,18 @@ ore_define_cfunc(ore_context* ore, const char* name, int num_in, ore_cfunc_t c, 
   ore_define(ore, name, v);
 }
 
+mpc_ast_t*
+ore_find_statements(mpc_ast_t* t) {
+  mpc_ast_t* stmt = NULL;
+  int i;
+  for (i = 0; i < t->children_num; i++) {
+    if (is_a(t->children[i], "char") && t->children[i]->contents[0] == '{') {
+      return t->children[i+1];
+    }
+  }
+  return NULL;
+}
+
 ore_value
 ore_func_call(ore_context* ore, ore_value fn, int num_in, ore_value* args) {
   if (fn.v.f.num_in != -1 && num_in != fn.v.f.num_in) {
@@ -925,50 +992,9 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
       break;
     case ORE_TYPE_FUNC:
       {
-        int num_in = t->children_num / 2 - 1, n = 0, i;
-        if (fn.v.f.num_in != -1 && num_in != fn.v.f.num_in) {
-          fprintf(stderr, "Number of arguments mismatch: %d for %d\n",
-            num_in, fn.v.f.num_in);
-          ore->err = ORE_ERROR_EXCEPTION;
-          return ore_value_nil();
-        }
-        ore_value* args = (ore_value*) malloc(sizeof(ore_value) * num_in);
-        if (!args) {
-          fprintf(stderr, "Failed to allocate memory\n");
-          ore->err = ORE_ERROR_EXCEPTION;
-          return ore_value_nil();
-        }
-        for (i = 2; i < t->children_num - 1; i += 2) {
-          args[n++] = ore_eval(ore, t->children[i]);
-        }
-
         ore_context* env = ore_new((ore_context*) fn.v.f.ore);
-        mpc_ast_t* stmts = NULL;
-        mpc_ast_t* f = fn.v.f.x.o;
-        n = 0;
-        for (i = 2; i < f->children_num; i++) {
-          if (is_a(f->children[i], "vararg")) {
-            ore_array_t* a = kl_init(value);
-            int j;
-            for (j = 0; j < num_in; j++) {
-              *kl_pushp(value, a) = args[j];
-            }
-            ore_define(env, f->children[i-1]->contents, ore_value_array_from_klist(ore, a));
-          } else if (is_a(f->children[i], "ident")) {
-            if (n < num_in)
-              ore_define(env, f->children[i]->contents, args[n++]);
-          } else if (is_a(f->children[i], "char")) {
-            if (f->children[i]->contents[0] == '{') {
-              i++;
-              break;
-            }
-          }
-        }
-        for (; i < f->children_num; i++) {
-          if (stmts == NULL && !is_a(f->children[i], "char")) {
-            stmts = f->children[i];
-          }
-        }
+        ore_value* args = ore_bind_args(ore, fn.v.f.x.o, env, t);
+        mpc_ast_t* stmts = ore_find_statements(fn.v.f.x.o);
         if (stmts) {
           v = ore_eval(env, stmts);
           if (env->err == ORE_ERROR_EXCEPTION)
@@ -1198,18 +1224,6 @@ ore_cmp(ore_context* ore, ore_value lhs, char* op, ore_value rhs) {
   if (!strcmp(op, "<=")) return ore_cmp_lessmore(ore, lhs, rhs) <= 0 ? ore_value_true() : ore_value_false();
   if (!strcmp(op, ">")) return ore_cmp_lessmore(ore, lhs, rhs) > 0 ? ore_value_true() : ore_value_false();
   if (!strcmp(op, "<=")) return ore_cmp_lessmore(ore, lhs, rhs) >= 0 ? ore_value_true() : ore_value_false();
-}
-
-mpc_ast_t*
-ore_find_statements(mpc_ast_t* t) {
-  mpc_ast_t* stmt = NULL;
-  int i;
-  for (i = 0; i < t->children_num; i++) {
-    if (is_a(t->children[i], "char") && t->children[i]->contents[0] == '{') {
-      return t->children[i+1];
-    }
-  }
-  return NULL;
 }
 
 ore_value
