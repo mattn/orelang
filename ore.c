@@ -258,6 +258,12 @@ ore_value_real_free(ore_value v) {
       ore_destroy((ore_context*) v.v.e->p);
       v.v.e = NULL;
       break;
+    case ORE_TYPE_OBJECT:
+      if (verbose)
+        printf("free object %p\n", v.v.o);
+      free(v.v.o);
+      v.v.o = NULL;
+      break;
   }
   v.t = ORE_TYPE_NIL;
 }
@@ -289,6 +295,10 @@ ore_value_ref(ore_value v) {
       v.v.e->ref++;
       if (verbose)
         printf("ref env %d %p\n", v.v.e->ref, v.v.e->p);
+    case ORE_TYPE_OBJECT:
+      v.v.o->ref++;
+      if (verbose)
+        printf("ref object %d %p\n", v.v.o->ref, v.v.o);
       break;
   }
 }
@@ -318,6 +328,11 @@ ore_value_unref(ore_value v) {
       if (verbose)
         printf("unref env %d %p\n", v.v.e->ref, v.v.e->p);
       if (--v.v.e->ref <= 0)
+        ore_value_real_free(v);
+    case ORE_TYPE_OBJECT:
+      if (verbose)
+        printf("unref object %d %p\n", v.v.o->ref, v.v.o);
+      if (--v.v.o->ref <= 0)
         ore_value_real_free(v);
       break;
   }
@@ -363,6 +378,9 @@ ore_is_same_ref(ore_value lhs, ore_value rhs) {
     case ORE_TYPE_ENV:
       if (rhs.t != ORE_TYPE_ENV) return 0;
       return lhs.v.e->p == rhs.v.e->p;
+    case ORE_TYPE_OBJECT:
+      if (rhs.t != ORE_TYPE_OBJECT) return 0;
+      return lhs.v.o == rhs.v.o;
   }
   return 0;
 }
@@ -531,6 +549,7 @@ ore_object_new(ore_context* ore, mpc_ast_t* t) {
   }
   v.v.o->c = clazz.v.c;
   v.v.o->e = this;
+  v.v.o->ref = 0;
   ore_eval(this, clazz.v.c->t);
   ore_define(this, "this", v);
   ore_value init = ore_prop(this, "__init__");
@@ -1489,10 +1508,17 @@ ore_new(ore_context* parent) {
   return ore;
 }
 
+#define unref_code(v) {\
+  ore_value_unref(v); \
+  if (verbose) \
+    printf("unref %d\n", v.t); \
+};
+
+
 void
 ore_destroy(ore_context* ore) {
   ore_value v;
-  kh_foreach_value(ore->env, v, ore_value_unref(v));
+  kh_foreach_value(ore->env, v, unref_code(v));
   kh_destroy(value, ore->env);
   free(ore);
 }
