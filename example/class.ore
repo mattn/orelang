@@ -1,0 +1,16 @@
+class Foo {
+  var a = 0;
+  func __init__(x, y) {
+    this.a = x + y;
+  }
+  func sing() {
+    this.say("foo");
+  }
+  func say(s) {
+    println(s, a);
+  }
+}
+
+var a = new Foo(1, 2);
+a.sing();
+println(a.a);
