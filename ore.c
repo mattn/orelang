@@ -262,9 +262,8 @@ ore_value_real_free(ore_value v) {
       if (verbose)
         printf("free object %p\n", v.v.o);
       ore_value terminate = ore_prop(v.v.o->e, "__terminate__");
-      if (terminate.t == ORE_TYPE_FUNC) {
+      if (terminate.t == ORE_TYPE_FUNC)
         ore_func_call(v.v.o->e, terminate, 0, NULL);
-      }
       free(v.v.o);
       v.v.o = NULL;
       break;
@@ -299,6 +298,7 @@ ore_value_ref(ore_value v) {
       v.v.e->ref++;
       if (verbose)
         printf("ref env %d %p\n", v.v.e->ref, v.v.e->p);
+      break;
     case ORE_TYPE_OBJECT:
       v.v.o->ref++;
       if (verbose)
@@ -333,6 +333,7 @@ ore_value_unref(ore_value v) {
         printf("unref env %d %p\n", v.v.e->ref, v.v.e->p);
       if (--v.v.e->ref <= 0)
         ore_value_real_free(v);
+      break;
     case ORE_TYPE_OBJECT:
       if (verbose)
         printf("unref object %d %p\n", v.v.o->ref, v.v.o);
@@ -481,6 +482,7 @@ mpc_ast_t*
 ore_find_statements(mpc_ast_t* t) {
   mpc_ast_t* stmt = NULL;
   int i;
+  if (is_a(t, "template")) return t;
   for (i = 0; i < t->children_num; i++) {
     if (is_a(t->children[i], "char") && t->children[i]->contents[0] == '{') {
       return t->children[i+1];
@@ -609,6 +611,10 @@ ore_value
 ore_parse_str(ore_context* ore, const char* s) {
   ore_value v = { ORE_TYPE_STRING };
   char* t = strdup(s);
+  if (!t) {
+    fprintf(stderr, "Failed to allocate memory\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+  }
   char* p = t + 1;
   char* ps = p;
   int n = 0;
@@ -1512,12 +1518,11 @@ ore_new(ore_context* parent) {
   return ore;
 }
 
-#define unref_code(v) {\
+#define unref_code(v) { \
   ore_value_unref(v); \
   if (verbose) \
     printf("unref %s\n", ore_kind(v)); \
 };
-
 
 void
 ore_destroy(ore_context* ore) {
@@ -1631,7 +1636,13 @@ int main(int argc, char **argv) {
   ore_array_t* args = kl_init(value);
   int i;
   for (i = f+1; i < argc; i++) {
-    *kl_pushp(value, args) = ore_value_str_from_ptr(ore, strdup(argv[i]), -1);
+    char* parg = strdup(argv[i]);
+    if (!parg) {
+      fprintf(stderr, "Failed to allocate memory\n");
+      exit(1);
+    }
+    ore->err = ORE_ERROR_EXCEPTION;
+    *kl_pushp(value, args) = ore_value_str_from_ptr(ore, parg, -1);
   }
   ore_define(ore, "args", ore_value_array_from_klist(ore, args));
 
