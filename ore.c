@@ -32,7 +32,7 @@
 "array      : '[' <lexp>? (',' <lexp>)* ']' ;                            \n" \
 "pair       : <string> ':' <lexp> ;                                      \n" \
 "hash       : '{' <pair>? (',' <pair>)* '}' ;                            \n" \
-"ident      : /[a-zA-Z][a-zA-Z0-9_]*/ ;                                  \n" \
+"ident      : /[a-zA-Z_][a-zA-Z0-9_]*/ ;                                  \n" \
 "                                                                        \n" \
 "term       : (<lambda> | <item> | <methodcall> | <cmp> | <prop>           " \
 "         | <anoncall> | <call>                                          \n" \
@@ -40,6 +40,7 @@
 "lexp       : <term> (('+' | '-') <term>)* ;                             \n" \
 "let_v      : <ident> '=' <lexp> ';' ;                                   \n" \
 "let_a      : <item> '=' <lexp> ';' ;                                    \n" \
+"let_p      : <prop> '=' <lexp> ';' ;                                    \n" \
 "else_if    : \"else\" \"if\" '(' <lexp> ')' '{' <stmts> '}' ;           \n" \
 "else       : \"else\" '{' <stmts> '}' ;                                 \n" \
 "if_stmt    : \"if\" '(' <lexp> ')' '{' <stmts> '}' ;                    \n" \
@@ -63,7 +64,8 @@
 "return     : \"return\" <lexp> ';' ;                                    \n" \
 "comment    : /#[^\n]*/ ;                                                \n" \
 "eof        : /$/ ;                                                      \n" \
-"stmt       : (<let_v> | <let_a> | <var> | <if> | <while> | <for_in>       " \
+"stmt       : (<let_v> | <let_a> | <let_p> | <var> | <if>                  " \
+"         | <while> | <for_in>                                             " \
 "         | <func> | <class> | <return> | <break>                        \n" \
 "         | <continue> | <comment> | (<lexp> ';')) ;                     \n" \
 "program    : <stmts> <eof> ;                                            \n"
@@ -191,6 +193,7 @@ ore_value ore_call(ore_context*, mpc_ast_t*);
 ore_value ore_eval(ore_context*, mpc_ast_t*);
 ore_context* ore_new(ore_context*);
 void ore_destroy(ore_context*);
+ore_value ore_func_call(ore_context*, ore_value, int, ore_value*);
 
 int verbose = 0;
 
@@ -476,6 +479,10 @@ ore_object_new(ore_context* ore, mpc_ast_t* t) {
   v.v.o->e = this;
   ore_eval(this, clazz.v.c->t);
   ore_define(this, "this", v);
+  ore_value init = ore_prop(this, "__init__");
+  if (init.t == ORE_TYPE_FUNC) {
+    ore_func_call(this, init, 0, NULL);
+  }
   return v;
 }
 
@@ -756,8 +763,6 @@ ore_prop(ore_context* ore, const char* name) {
   if (k != kh_end(p->env)) {
     return kh_value(p->env, k);
   }
-  fprintf(stderr, "Unknown identifier '%s'\n", name);
-  ore->err = ORE_ERROR_EXCEPTION;
   return ore_value_nil();
 }
 
@@ -829,6 +834,54 @@ ore_define_cfunc(ore_context* ore, const char* name, int num_in, ore_cfunc_t c, 
   v.v.f.x.c = c;
   v.v.f.u = u;
   ore_define(ore, name, v);
+}
+
+ore_value
+ore_func_call(ore_context* ore, ore_value fn, int num_in, ore_value* args) {
+  if (fn.v.f.num_in != -1 && num_in != fn.v.f.num_in) {
+    fprintf(stderr, "Number of arguments mismatch: %d for %d\n",
+      num_in, fn.v.f.num_in);
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+
+  ore_context* env = ore_new((ore_context*) fn.v.f.ore);
+  mpc_ast_t* stmts = NULL;
+  mpc_ast_t* f = fn.v.f.x.o;
+  int n = 0, i;
+  for (i = 2; i < f->children_num; i++) {
+    if (is_a(f->children[i], "vararg")) {
+      ore_array_t* a = kl_init(value);
+      int j;
+      for (j = 0; j < num_in; j++) {
+        *kl_pushp(value, a) = args[j];
+      }
+      ore_define(env, f->children[i-1]->contents, ore_value_array_from_klist(ore, a));
+    } else if (is_a(f->children[i], "ident")) {
+      if (n < num_in)
+        ore_define(env, f->children[i]->contents, args[n++]);
+    } else if (is_a(f->children[i], "char")) {
+      if (f->children[i]->contents[0] == '{') {
+        i++;
+        break;
+      }
+    }
+  }
+  for (; i < f->children_num; i++) {
+    if (stmts == NULL && !is_a(f->children[i], "char")) {
+      stmts = f->children[i];
+    }
+  }
+  ore_value v = ore_value_nil();
+  if (stmts) {
+    v = ore_eval(env, stmts);
+    if (env->err == ORE_ERROR_EXCEPTION)
+      ore->err = env->err;
+    char buf[64];
+    sprintf(buf, "0x%p", env->env);
+    ore_define(ore, buf, ore_value_env_from_context(env));
+  }
+  return v;
 }
 
 ore_value
@@ -1213,8 +1266,13 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   if (is_a(t, "prop")) {
     ore_value v = ore_eval(ore, t->children[0]);
     ore_value e = ore_value_nil();
-    ore_context* this = (ore_context*) v.v.o->e;
+    ore_context* this = v.t == ORE_TYPE_OBJECT ? (ore_context*) v.v.o->e : NULL;
     for (i = 2; i < t->children_num; i += 2) {
+      if (v.t != ORE_TYPE_OBJECT) {
+        fprintf(stderr, "Invalid operation for %s\n", ore_kind(v));
+        ore->err = ORE_ERROR_EXCEPTION;
+        return ore_value_nil();
+      }
       v = ore_prop(this, t->children[i]->contents);
       if (v.t == ORE_TYPE_OBJECT) this = (ore_context*) v.v.o->e;
     }
@@ -1236,10 +1294,26 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   }
   if (is_a(t, "let_a")) {
     ore_value lhs = ore_eval(ore, t->children[0]->children[0]);
-    ore_value e = ore_value_nil();
     ore_value* r = NULL;
     for (i = 2; i < t->children[0]->children_num - 1; i += 3) {
       ore_value key = ore_eval(ore, t->children[0]->children[i]);
+      r = ore_index_ref(ore, lhs, key, 0);
+      lhs = r == NULL ? ore_value_nil() : *r;
+    }
+    if (r == NULL) {
+      return ore_value_nil();
+    }
+    ore_value rhs = ore_eval(ore, t->children[2]);
+    ore_value_ref(rhs);
+    *r = rhs;
+    return rhs;
+  }
+  if (is_a(t, "let_p")) {
+    ore_value lhs = ore_eval(ore, t->children[0]->children[0]);
+    ore_value* r = NULL;
+    for (i = 2; i < t->children[0]->children_num; i += 2) {
+      ore_value key = ore_value_str_from_ptr(ore, t->children[0]->children[i]->contents, -1);
+      ore_p(key);
       r = ore_index_ref(ore, lhs, key, 0);
       lhs = r == NULL ? ore_value_nil() : *r;
     }
@@ -1456,6 +1530,7 @@ int main(int argc, char **argv) {
   mpc_parser_t* Item       = mpc_new("item");
   mpc_parser_t* Prop       = mpc_new("prop");
   mpc_parser_t* LetA       = mpc_new("let_a");
+  mpc_parser_t* LetP       = mpc_new("let_p");
   mpc_parser_t* If         = mpc_new("if");
   mpc_parser_t* IfStmt     = mpc_new("if_stmt");
   mpc_parser_t* ElseIf     = mpc_new("else_if");
@@ -1485,7 +1560,7 @@ int main(int argc, char **argv) {
       True, False, Nil,
       Number, Factor, String, Array, Pair, Hash, Ident, Cmp,
       If, IfStmt, ElseIf, Else, While, ForIn, Break, Continue,
-      Term, Lexp, LetV, Value, Item, Prop, LetA, Var, Vararg,
+      Term, Lexp, LetV, Value, Item, Prop, LetA, LetP, Var, Vararg,
       Lambda, Func, Class, Template, New, Call, Anoncall, MethodCall,
       Return, Comment, Eof,
       Stmt, Stmts, Program);
@@ -1556,7 +1631,7 @@ leave:
       True, False, Nil,
       Number, Factor, String, Array, Pair, Hash, Ident, Cmp,
       If, IfStmt, ElseIf, Else, While, ForIn, Break, Continue,
-      Term, Lexp, LetV, Value, Item, Prop, LetA, Var, Vararg,
+      Term, Lexp, LetV, Value, Item, Prop, LetA, LetP, Var, Vararg,
       Lambda, Func, Class, Template, New, Call, Anoncall, MethodCall,
       Return, Comment, Eof,
       Stmt, Stmts, Program);
