@@ -17,7 +17,7 @@ endif
 
 all : $(TARGET)
 
-$(TARGET) : $(OBJS) mpc.h khash.h klist.h kstring.h
+$(TARGET) : $(OBJS) mpc.h khash.h klist.h kstring.h ore.h
 	gcc -o $@ $(OBJS) $(LIBS)
 
 .c.o :
