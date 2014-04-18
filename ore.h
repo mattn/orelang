@@ -111,6 +111,14 @@ typedef ore_value (*ore_cfunc_t)(ore_context*, int, ore_value*, void*);
 ore_context* ore_new(ore_context*);
 void ore_destroy(ore_context*);
 
+void ore_value_ref(ore_value);
+void ore_value_unref(ore_value);
+void ore_p(ore_value);
+
+ore_value ore_value_nil();
+ore_value ore_value_true();
+ore_value ore_value_false();
+
 void ore_define(ore_context*, const char*, ore_value);
 void ore_define_cfunc(ore_context*, const char*, int, ore_cfunc_t, void*);
 void ore_set(ore_context*, const char*, ore_value);

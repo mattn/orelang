@@ -79,20 +79,14 @@ typedef kliter_t(value) ore_array_iter_t;
 typedef khash_t(value) ore_hash_t;
 typedef khiter_t ore_hash_iter_t;
 
-void ore_value_ref(ore_value);
-void ore_value_unref(ore_value);
-void ore_p(ore_value);
-
-typedef ore_value (*ore_cfunc_t)(ore_context*, int, ore_value*, void*);
-
 KHASH_MAP_INIT_STR(cfunc, ore_cfunc_t)
 
-ore_value ore_call(ore_context*, mpc_ast_t*);
-ore_value ore_eval(ore_context*, mpc_ast_t*);
+static ore_value ore_call(ore_context*, mpc_ast_t*);
+static ore_value ore_eval(ore_context*, mpc_ast_t*);
 
 int verbose = 0;
 
-const char*
+static const char*
 ore_kind(ore_value v) {
   switch (v.t) {
     case ORE_TYPE_NIL:
@@ -125,7 +119,7 @@ ore_kind(ore_value v) {
   return "unknown";
 }
 
-void
+static void
 ore_value_real_free(ore_value v) {
   switch (v.t) {
     case ORE_TYPE_STRING:
@@ -240,7 +234,7 @@ ore_value_unref(ore_value v) {
   }
 }
 
-const char*
+static const char*
 ore_value_str_ptr(ore_value v) {
   return v.v.s->p;
 }
@@ -265,7 +259,7 @@ ore_value_false() {
   return v;
 }
 
-int
+static int
 ore_is_same_ref(ore_value lhs, ore_value rhs) {
   switch (lhs.t) {
     case ORE_TYPE_STRING:
@@ -287,7 +281,7 @@ ore_is_same_ref(ore_value lhs, ore_value rhs) {
   return 0;
 }
 
-int
+static int
 ore_is_true(ore_value v) {
   switch (v.t) {
     case ORE_TYPE_BOOL:
@@ -314,12 +308,12 @@ ore_is_true(ore_value v) {
   return 0;
 }
 
-int
+static int
 ore_is_nil(ore_value v) {
   return v.t == ORE_TYPE_NIL;
 }
 
-ore_value
+static ore_value
 ore_parse_num(ore_context* ore, const char* s) {
   ore_value v = {0};
   if (!strchr(s, '.')) {
@@ -332,7 +326,7 @@ ore_parse_num(ore_context* ore, const char* s) {
   return v;
 }
 
-ore_value
+static ore_value
 ore_value_array_from_klist(ore_context* ore, ore_array_t* p) {
   ore_value v = { ORE_TYPE_ARRAY };
   v.v.a = (ore_array*) malloc(sizeof(ore_array));
@@ -346,7 +340,7 @@ ore_value_array_from_klist(ore_context* ore, ore_array_t* p) {
   return v;
 }
 
-ore_value
+static ore_value
 ore_value_hash_from_khash(ore_context* ore, ore_hash_t* p) {
   ore_value v = { ORE_TYPE_HASH };
   v.v.h = (ore_hash*) malloc(sizeof(ore_hash));
@@ -360,7 +354,7 @@ ore_value_hash_from_khash(ore_context* ore, ore_hash_t* p) {
   return v;
 }
 
-ore_value
+static ore_value
 ore_define_class(ore_context* ore, mpc_ast_t* t) {
   ore_value v = { ORE_TYPE_CLASS };
   v.v.c = (ore_class*) malloc(sizeof(ore_class));
@@ -382,7 +376,7 @@ ore_define_class(ore_context* ore, mpc_ast_t* t) {
   return v;
 }
 
-mpc_ast_t*
+static mpc_ast_t*
 ore_find_statements(mpc_ast_t* t) {
   mpc_ast_t* stmt = NULL;
   int i;
@@ -395,7 +389,7 @@ ore_find_statements(mpc_ast_t* t) {
   return NULL;
 }
 
-ore_value*
+static ore_value*
 ore_bind_args(ore_context* ore, mpc_ast_t* f, ore_context* this, mpc_ast_t* t) {
   int num_in = t->children_num / 2 - 1, n = 0, i;
   ore_value* args = (ore_value*) malloc(sizeof(ore_value) * num_in);
@@ -449,7 +443,7 @@ ore_bind_args(ore_context* ore, mpc_ast_t* f, ore_context* this, mpc_ast_t* t) {
   return args;
 }
 
-ore_value
+static ore_value
 ore_object_new(ore_context* ore, mpc_ast_t* t) {
   ore_context* g = ore;
   while (g->parent) g = g->parent;
@@ -521,7 +515,7 @@ ore_value_env_from_context(ore_context* p) {
   return v;
 }
 
-ore_value
+static ore_value
 ore_value_str_from_ptr(ore_context* ore, char* p, int l) {
   ore_value v = { ORE_TYPE_STRING };
   v.v.s = (ore_string*) malloc(sizeof(ore_string));
@@ -536,7 +530,7 @@ ore_value_str_from_ptr(ore_context* ore, char* p, int l) {
   return v;
 }
 
-ore_value
+static ore_value
 ore_parse_str(ore_context* ore, const char* s) {
   ore_value v = { ORE_TYPE_STRING };
   char* t = strdup(s);
@@ -578,7 +572,7 @@ ore_parse_str(ore_context* ore, const char* s) {
   return v;
 }
 
-ore_value
+static ore_value
 ore_cfunc_len(ore_context* ore, int num_in, ore_value* args, void* u) {
   ore_value v = { ORE_TYPE_INT };
   switch (args[0].t) {
@@ -600,12 +594,12 @@ ore_cfunc_len(ore_context* ore, int num_in, ore_value* args, void* u) {
   return ore_value_nil();
 }
 
-ore_value
+static ore_value
 ore_cfunc_typeof(ore_context* ore, int num_in, ore_value* args, void* u) {
   return ore_value_str_from_ptr(ore, (char*) ore_kind(args[0]), -1);
 }
 
-ore_value
+static ore_value
 ore_cfunc_load(ore_context* ore, int num_in, ore_value* args, void* u) {
   ore_parse_context* pctx = (ore_parse_context*) u;
 
@@ -628,7 +622,7 @@ ore_cfunc_load(ore_context* ore, int num_in, ore_value* args, void* u) {
   return ore_value_nil();
 }
 
-ore_value
+static ore_value
 ore_cfunc_exit(ore_context* ore, int num_in, ore_value* args, void* u) {
   if (args[0].t != ORE_TYPE_INT) {
     fprintf(stderr, "Argument should be int\n");
@@ -639,7 +633,7 @@ ore_cfunc_exit(ore_context* ore, int num_in, ore_value* args, void* u) {
   return ore_value_nil();
 }
 
-char*
+static char*
 ore_value_to_str(ore_context* ore, ore_value v) {
   kstring_t ks = { 0, 0, NULL };
 
@@ -724,12 +718,12 @@ ore_value_to_str(ore_context* ore, ore_value v) {
   return ks.s;
 }
 
-ore_value
+static ore_value
 ore_cfunc_to_string(ore_context* ore, int num_in, ore_value* args, void* u) {
   return ore_value_str_from_ptr(ore, ore_value_to_str(ore, args[0]), -1);
 }
 
-ore_value
+static ore_value
 ore_cfunc_print(ore_context* ore, int num_in, ore_value* args, void* u) {
   int i;
   for (i = 0; i < num_in; i++) {
@@ -742,14 +736,14 @@ ore_cfunc_print(ore_context* ore, int num_in, ore_value* args, void* u) {
   return ore_value_nil();
 }
 
-ore_value
+static ore_value
 ore_cfunc_println(ore_context* ore, int num_in, ore_value* args, void* u) {
   ore_cfunc_print(ore, num_in, args, NULL);
   puts("");
   return ore_value_nil();
 }
 
-ore_value
+static ore_value
 ore_cfunc_dump_env(ore_context* ore, int num_in, ore_value* args, void* u) {
   int i, level = 0;
   while (ore) {
@@ -940,7 +934,7 @@ ore_func_call(ore_context* ore, ore_value fn, int num_in, ore_value* args) {
   return v;
 }
 
-ore_value
+static ore_value
 ore_call(ore_context* ore, mpc_ast_t *t) {
   ore_value fn;
   if (is_a(t->children[0], "ident")) {
@@ -1003,7 +997,8 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
   return v;
 }
 
-ore_value* ore_index_ref(ore_context* ore, ore_value v, ore_value e, int update) {
+static ore_value*
+ore_index_ref(ore_context* ore, ore_value v, ore_value e, int update) {
   if (v.t == ORE_TYPE_ARRAY) {
     if (e.t != ORE_TYPE_INT) {
       fprintf(stderr, "Array index should be int\n");
@@ -1075,7 +1070,7 @@ ore_value* ore_index_ref(ore_context* ore, ore_value v, ore_value e, int update)
   return NULL;
 }
 
-ore_value
+static ore_value
 ore_expr(ore_context* ore, mpc_ast_t* t) {
   int i;
   ore_value v = ore_eval(ore, t->children[0]);
@@ -1150,7 +1145,7 @@ ore_expr(ore_context* ore, mpc_ast_t* t) {
   return v;
 }
 
-int
+static int
 ore_cmp_eq(ore_context* ore, ore_value lhs, ore_value rhs) {
   switch (lhs.t) {
     case ORE_TYPE_NIL:
@@ -1195,7 +1190,7 @@ ore_cmp_eq(ore_context* ore, ore_value lhs, ore_value rhs) {
   return 0;
 }
 
-int
+static int
 ore_cmp_lessmore(ore_context* ore, ore_value lhs, ore_value rhs) {
   if (lhs.t != rhs.t) return 0;
   switch (lhs.t) {
@@ -1209,7 +1204,7 @@ ore_cmp_lessmore(ore_context* ore, ore_value lhs, ore_value rhs) {
   return 0;
 }
 
-ore_value
+static ore_value
 ore_cmp(ore_context* ore, ore_value lhs, char* op, ore_value rhs) {
   if (!strcmp(op, "==")) return ore_cmp_eq(ore, lhs, rhs) ? ore_value_true() : ore_value_false();
   if (!strcmp(op, "!=")) return !ore_cmp_eq(ore, lhs, rhs) ? ore_value_true() : ore_value_false();
@@ -1219,7 +1214,7 @@ ore_cmp(ore_context* ore, ore_value lhs, char* op, ore_value rhs) {
   if (!strcmp(op, "<=")) return ore_cmp_lessmore(ore, lhs, rhs) >= 0 ? ore_value_true() : ore_value_false();
 }
 
-ore_value
+static ore_value
 ore_eval(ore_context* ore, mpc_ast_t* t) {
   if (!t) return ore_value_nil();
   int i, r;
@@ -1495,7 +1490,7 @@ ore_destroy(ore_context* ore) {
   free(ore);
 }
 
-int
+static int
 parse_args(int argc, char **argv) {
   int i;
   for (i = 1; i < argc; i++) {
@@ -1512,12 +1507,13 @@ parse_args(int argc, char **argv) {
   return i;
 }
 
-void
+static void
 usage(char* prog) {
   fprintf(stderr, "usage of %s: file\n", prog);
 }
 
-int main(int argc, char **argv) {
+int
+main(int argc, char **argv) {
   int f = parse_args(argc, argv);
   if (f < 0) {
     usage(argv[0]);
