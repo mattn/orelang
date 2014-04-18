@@ -86,6 +86,7 @@ typedef enum {
   ORE_TYPE_CFUNC,
   ORE_TYPE_ENV,
   ORE_TYPE_CLASS,
+  ORE_TYPE_CCLASS,
   ORE_TYPE_OBJECT,
 } ore_type;
 
@@ -135,8 +136,14 @@ typedef struct _ore_class {
   mpc_ast_t* t;
 } ore_class;
 
+typedef struct _ore_cclass {
+  const char* n;
+  void* e;
+} ore_cclass;
+
 typedef struct _ore_object {
-  ore_class* c;
+  ore_type t;
+  void* c;
   void* e;
   int ref;
 } ore_object;
@@ -153,6 +160,7 @@ typedef struct _ore_value {
     ore_func f;
     ore_env* e;
     ore_class* c;
+    ore_cclass* x;
     ore_object* o;
   } v;
 } ore_value;
@@ -183,6 +191,8 @@ typedef struct _ore_context {
 } ore_context;
 
 typedef ore_value (*ore_cfunc_t)(ore_context*, int, ore_value*, void*);
+
+KHASH_MAP_INIT_STR(cfunc, ore_cfunc_t)
 
 void ore_define(ore_context*, const char*, ore_value);
 void ore_define_cfunc(ore_context*, const char*, int, ore_cfunc_t, void*);
@@ -221,6 +231,8 @@ ore_kind(ore_value v) {
     case ORE_TYPE_ENV:
       return "env";
     case ORE_TYPE_CLASS:
+      return "class";
+    case ORE_TYPE_CCLASS:
       return "class";
     case ORE_TYPE_OBJECT:
       return "object";
@@ -409,6 +421,8 @@ ore_is_true(ore_value v) {
       return 1; // TODO
     case ORE_TYPE_CLASS:
       return 1; // TODO
+    case ORE_TYPE_CCLASS:
+      return 1; // TODO
     case ORE_TYPE_OBJECT:
       return 1; // TODO
   }
@@ -470,7 +484,12 @@ ore_define_class(ore_context* ore, mpc_ast_t* t) {
     ore->err = ORE_ERROR_EXCEPTION;
     return ore_value_nil();
   }
-  v.v.c->n = t->children[1]->contents;
+  v.v.c->n = strdup(t->children[1]->contents);
+  if (!v.v.c->n) {
+    fprintf(stderr, "Failed to allocate memory\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
   v.v.c->t = t->children[3];
   ore_context* g = ore;
   while (g->parent) g = g->parent;
@@ -550,30 +569,55 @@ ore_object_new(ore_context* ore, mpc_ast_t* t) {
   ore_context* g = ore;
   while (g->parent) g = g->parent;
   ore_value clazz = ore_get(g, t->children[1]->contents);
-  if (clazz.t != ORE_TYPE_CLASS) {
-    fprintf(stderr, "Unknown class '%s'\n", t->children[1]->contents);
-    ore->err = ORE_ERROR_EXCEPTION;
-    return ore_value_nil();
-  }
-
-  ore_context* this = ore_new(ore);
-
   ore_value v = { ORE_TYPE_OBJECT };
-  v.v.o = (ore_object*) malloc(sizeof(ore_object));
-  if (!v.v.o) {
-    fprintf(stderr, "Failed to allocate memory\n");
-    ore->err = ORE_ERROR_EXCEPTION;
-    return ore_value_nil();
-  }
-  v.v.o->c = clazz.v.c;
-  v.v.o->e = this;
-  v.v.o->ref = -1;
-  ore_eval(this, ore_find_statements(clazz.v.c->t));
-  ore_define(this, "this", v);
-  ore_value initialize = ore_prop(this, "__initialize__");
-  if (initialize.t == ORE_TYPE_FUNC) {
-    ore_value* args = ore_bind_args(ore, initialize.v.f.x.o, this, t);
-    ore_func_call(this, initialize, 0, NULL);
+  switch (clazz.t) {
+    case ORE_TYPE_CLASS:
+      {
+        ore_context* this = ore_new(ore);
+        v.v.o = (ore_object*) malloc(sizeof(ore_object));
+        if (!v.v.o) {
+          fprintf(stderr, "Failed to allocate memory\n");
+          ore->err = ORE_ERROR_EXCEPTION;
+          return ore_value_nil();
+        }
+        v.v.o->t = clazz.t;
+        v.v.o->c = clazz.v.c;
+        v.v.o->e = this;
+        v.v.o->ref = -1;
+        ore_eval(this, ore_find_statements(clazz.v.c->t));
+        ore_define(this, "this", v);
+        ore_value initialize = ore_prop(this, "__initialize__");
+        if (initialize.t == ORE_TYPE_FUNC) {
+          ore_value* args = ore_bind_args(ore, initialize.v.f.x.o, this, t);
+          ore_func_call(this, initialize, 0, NULL);
+        }
+      }
+      break;
+    case ORE_TYPE_CCLASS:
+      {
+        v.v.o = (ore_object*) malloc(sizeof(ore_object));
+        if (!v.v.o) {
+          fprintf(stderr, "Failed to allocate memory\n");
+          ore->err = ORE_ERROR_EXCEPTION;
+          return ore_value_nil();
+        }
+        v.v.o->t = clazz.t;
+        v.v.o->c = clazz.v.x;
+        v.v.o->e = clazz.v.x->e;
+        v.v.o->ref = -1;
+        /*
+        ore_value initialize = ore_prop(this, "__initialize__");
+        if (initialize.t == ORE_TYPE_FUNC) {
+          ore_value* args = ore_bind_args(ore, initialize.v.f.x.o, this, t);
+          ore_func_call(this, initialize, 0, NULL);
+        }
+        */
+      }
+      break;
+    default:
+      fprintf(stderr, "Unknown class '%s'\n", t->children[1]->contents);
+      ore->err = ORE_ERROR_EXCEPTION;
+      return ore_value_nil();
   }
   return v;
 }
@@ -782,8 +826,11 @@ ore_value_to_str(ore_context* ore, ore_value v) {
     case ORE_TYPE_CLASS:
       kputs(v.v.c->n, &ks);
       break;
+    case ORE_TYPE_CCLASS:
+      kputs(v.v.c->n, &ks);
+      break;
     case ORE_TYPE_OBJECT:
-      ksprintf(&ks, "<%s-0x%p>", v.v.o->c->n, v.v.o);
+      ksprintf(&ks, "<%s-0x%p>", ((ore_class*)v.v.o->c)->n, v.v.o);
       break;
     default:
       kputs("<unknown>", &ks);
@@ -919,6 +966,34 @@ ore_define(ore_context* ore, const char* name, ore_value v) {
   ore_value_ref(v);
   kh_value(ore->env, k) = v;
   ore_value_unref(old);
+}
+
+ore_value
+orex_define_class(ore_context* ore, const char* name) {
+  ore_value v = { ORE_TYPE_CCLASS };
+  v.v.x = (ore_cclass*) malloc(sizeof(ore_cclass));
+  if (!v.v.x) {
+    fprintf(stderr, "Failed to allocate memory\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  v.v.x->n = name;
+  v.v.x->e = ore_new(ore);
+  ore_context* g = ore;
+  while (g->parent) g = g->parent;
+  ore_define(g, v.v.x->n, v);
+  return v;
+}
+
+void
+orex_define_method(ore_context* ore, ore_value clazz, const char* name, int num_in, ore_cfunc_t c, void* u) {
+  int r;
+  ore_value v = { ORE_TYPE_CFUNC };
+  v.v.f.ore = clazz.v.x->e;
+  v.v.f.num_in = num_in;
+  v.v.f.x.c = c;
+  v.v.f.u = u;
+  ore_define(clazz.v.x->e, name, v);
 }
 
 void
@@ -1360,7 +1435,6 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     ore_value* r = NULL;
     for (i = 2; i < t->children[0]->children_num; i += 2) {
       ore_value key = ore_value_str_from_ptr(ore, t->children[0]->children[i]->contents, -1);
-      ore_p(key);
       r = ore_index_ref(ore, lhs, key, 0);
       lhs = r == NULL ? ore_value_nil() : *r;
     }
@@ -1648,6 +1722,9 @@ int main(int argc, char **argv) {
     *kl_pushp(value, args) = ore_value_str_from_ptr(ore, parg, -1);
   }
   ore_define(ore, "args", ore_value_array_from_klist(ore, args));
+
+  ore_value cx = orex_define_class(ore, "Socket");
+  orex_define_method(ore, cx, "connect", 1, ore_cfunc_len, NULL);
 
   if (f > 0) {
     if (!mpc_parse_contents(argv[f], Program, &result)) {
