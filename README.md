@@ -9,6 +9,7 @@
 * [プログラミング言語の作り方(2)](http://mattn.kaoriya.net/software/build_your_own_programming_language2.htm)
 * [プログラミング言語の作り方(3)](http://mattn.kaoriya.net/software/build_your_own_programming_language3.htm)
 * [プログラミング言語の作り方(4)](http://mattn.kaoriya.net/software/build_your_own_programming_language4.htm)
+* [プログラミング言語の作り方(5)](http://mattn.kaoriya.net/software/build_your_own_programming_language5.htm)
 
 # Usage
 
