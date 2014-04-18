@@ -5,61 +5,68 @@
 
 #define STRUCTURE \
 "                                                                       \n" \
-"number    : /-?[0-9]+(\\.[0-9]*)?(e[0-9]+)?/ ;                         \n" \
-"true      : \"true\" ;                                                 \n" \
-"false     : \"false\" ;                                                \n" \
-"nil       : \"nil\" ;                                                  \n" \
-"factor    : '(' <lexp> ')'                                             \n" \
-"          | <number>                                                   \n" \
-"          | <string>                                                   \n" \
-"          | <array>                                                    \n" \
-"          | <hash>                                                     \n" \
-"          | <true>                                                     \n" \
-"          | <false>                                                    \n" \
-"          | <nil>                                                      \n" \
-"          | <call>                                                     \n" \
-"          | <ident> ;                                                  \n" \
-"string    : /\"(\\\\.|[^\"])*\"/ ;                                     \n" \
-"item      : <factor> '[' <lexp> ']' ;                                  \n" \
-"cmp       : <factor>                                                     " \
-"        (\"!=\" | \"==\" | \"<=\" | \"<\" | \">=\" | \">\" )             " \
-"        <factor> ;                                                     \n" \
-"call      : <ident> '(' <lexp>? (',' <lexp>)* ')' ;                    \n" \
-"anoncall  : <factor> '(' <lexp>? (',' <lexp>)* ')' ;                   \n" \
-"array     : '[' <lexp>? (',' <lexp>)* ']' ;                            \n" \
-"pair      : <string> ':' <lexp> ;                                      \n" \
-"hash      : '{' <pair>? (',' <pair>)* '}' ;                            \n" \
-"ident     : /[a-zA-Z][a-zA-Z0-9_]*/ ;                                  \n" \
-"                                                                       \n" \
-"term      : (<lambda> | <item> | <cmp> | <call> | <anoncall>             " \
-"        | <factor> (('*' | '/' | '%') <factor>)*) ;                    \n" \
-"lexp      : <term> (('+' | '-') <term>)* ;                             \n" \
-"let_v     : <ident> '=' <lexp> ';' ;                                   \n" \
-"let_a     : <item> '=' <lexp> ';' ;                                    \n" \
-"else_if   : \"else\" \"if\" '(' <lexp> ')' '{' <stmts> '}' ;           \n" \
-"else      : \"else\" '{' <stmts> '}' ;                                 \n" \
-"if_stmt   : \"if\" '(' <lexp> ')' '{' <stmts> '}' ;                    \n" \
-"if        : <if_stmt> <else_if>* <else>? ;                             \n" \
-"while     : \"while\" '(' <lexp> ')' '{' <stmts> '}' ;                 \n" \
-"for_in    : \"for\" '(' <ident> \"in\" <lexp> ')' '{' <stmts> '}' ;    \n" \
-"var       : \"var\" <ident> '=' <lexp> ';' ;                           \n" \
-"vararg    : \"...\" ;                                                  \n" \
-"stmts     : <stmt>* ;                                                  \n" \
-"                                                                       \n" \
-"lambda    : \"func\"                                                     " \
-"        '(' <ident>? (<vararg> | (',' <ident>)*) ')' '{' <stmts> '}' ; \n" \
-"func      : \"func\" <ident>                                             " \
-"        '(' <ident>? (<vararg> | (',' <ident>)*) ')' '{' <stmts> '}' ; \n" \
-"                                                                       \n" \
-"break     : \"break\" ';' ;                                            \n" \
-"continue  : \"continue\" ';' ;                                         \n" \
-"return    : \"return\" <lexp> ';' ;                                    \n" \
-"comment   : /#[^\n]*/ ;                                                \n" \
-"eof       : /$/ ;                                                      \n" \
-"stmt      : (<let_v> | <let_a> | <var> | <if> | <while> | <for_in>       " \
-"        | <func> | <return> | <break> | <continue> | <comment>         \n" \
-"        | (<lexp> ';')) ;                                              \n" \
-"program   : <stmts> <eof> ;                                            \n"
+"number     : /-?[0-9]+(\\.[0-9]*)?(e[0-9]+)?/ ;                         \n" \
+"true       : \"true\" ;                                                 \n" \
+"false      : \"false\" ;                                                \n" \
+"nil        : \"nil\" ;                                                  \n" \
+"factor     : '(' <lexp> ')'                                             \n" \
+"           | <number>                                                   \n" \
+"           | <string>                                                   \n" \
+"           | <array>                                                    \n" \
+"           | <hash>                                                     \n" \
+"           | <true>                                                     \n" \
+"           | <false>                                                    \n" \
+"           | <nil>                                                      \n" \
+"           | <call>                                                     \n" \
+"           | <new>                                                      \n" \
+"           | <ident> ;                                                  \n" \
+"string     : /\"(\\\\.|[^\"])*\"/ ;                                     \n" \
+"item       : <factor> ('[' <lexp> ']')+ ;                               \n" \
+"prop       : <factor> ('.' <ident>)+ ;                                  \n" \
+"cmp        : <factor>                                                     " \
+"         (\"!=\" | \"==\" | \"<=\" | \"<\" | \">=\" | \">\" )             " \
+"         <factor> ;                                                     \n" \
+"call       : <ident> '(' <lexp>? (',' <lexp>)* ')' ;                    \n" \
+"anoncall   : <factor> '(' <lexp>? (',' <lexp>)* ')' ;                   \n" \
+"methodcall : <prop> '(' <lexp>? (',' <lexp>)* ')' ;                     \n" \
+"array      : '[' <lexp>? (',' <lexp>)* ']' ;                            \n" \
+"pair       : <string> ':' <lexp> ;                                      \n" \
+"hash       : '{' <pair>? (',' <pair>)* '}' ;                            \n" \
+"ident      : /[a-zA-Z][a-zA-Z0-9_]*/ ;                                  \n" \
+"                                                                        \n" \
+"term       : (<lambda> | <item> | <methodcall> | <cmp> | <prop>           " \
+"         | <anoncall> | <call>                                          \n" \
+"         | <factor> (('*' | '/' | '%') <factor>)*) ;                    \n" \
+"lexp       : <term> (('+' | '-') <term>)* ;                             \n" \
+"let_v      : <ident> '=' <lexp> ';' ;                                   \n" \
+"let_a      : <item> '=' <lexp> ';' ;                                    \n" \
+"else_if    : \"else\" \"if\" '(' <lexp> ')' '{' <stmts> '}' ;           \n" \
+"else       : \"else\" '{' <stmts> '}' ;                                 \n" \
+"if_stmt    : \"if\" '(' <lexp> ')' '{' <stmts> '}' ;                    \n" \
+"if         : <if_stmt> <else_if>* <else>? ;                             \n" \
+"while      : \"while\" '(' <lexp> ')' '{' <stmts> '}' ;                 \n" \
+"for_in     : \"for\" '(' <ident> \"in\" <lexp> ')' '{' <stmts> '}' ;    \n" \
+"var        : \"var\" <ident> '=' <lexp> ';' ;                           \n" \
+"vararg     : \"...\" ;                                                  \n" \
+"stmts      : <stmt>* ;                                                  \n" \
+"                                                                        \n" \
+"lambda     : \"func\"                                                     " \
+"         '(' <ident>? (<vararg> | (',' <ident>)*) ')' '{' <stmts> '}' ; \n" \
+"func       : \"func\" <ident>                                             " \
+"         '(' <ident>? (<vararg> | (',' <ident>)*) ')' '{' <stmts> '}' ; \n" \
+"template   : (<var> | <func>)* ;                                        \n" \
+"class      : \"class\" <ident> '{' <template> '}' ;                     \n" \
+"new        : \"new\" <ident> '(' <lexp>? (',' <lexp>)* ')' ;            \n" \
+"                                                                        \n" \
+"break      : \"break\" ';' ;                                            \n" \
+"continue   : \"continue\" ';' ;                                         \n" \
+"return     : \"return\" <lexp> ';' ;                                    \n" \
+"comment    : /#[^\n]*/ ;                                                \n" \
+"eof        : /$/ ;                                                      \n" \
+"stmt       : (<let_v> | <let_a> | <var> | <if> | <while> | <for_in>       " \
+"         | <func> | <class> | <return> | <break>                        \n" \
+"         | <continue> | <comment> | (<lexp> ';')) ;                     \n" \
+"program    : <stmts> <eof> ;                                            \n"
 
 void ore_value_free(void* p);
 
@@ -70,12 +77,14 @@ typedef enum {
   ORE_TYPE_BOOL,
   ORE_TYPE_INT,
   ORE_TYPE_FLOAT,
-  ORE_TYPE_STR,
+  ORE_TYPE_STRING,
   ORE_TYPE_ARRAY,
   ORE_TYPE_HASH,
   ORE_TYPE_FUNC,
   ORE_TYPE_CFUNC,
   ORE_TYPE_ENV,
+  ORE_TYPE_CLASS,
+  ORE_TYPE_OBJECT,
 } ore_type;
 
 typedef enum {
@@ -119,6 +128,17 @@ typedef struct _ore_env {
   int ref;
 } ore_env;
 
+typedef struct _ore_class {
+  const char* n;
+  mpc_ast_t* t;
+} ore_class;
+
+typedef struct _ore_object {
+  ore_class* c;
+  void* e;
+  int ref;
+} ore_object;
+
 typedef struct _ore_value {
   ore_type t;
   union {
@@ -130,6 +150,8 @@ typedef struct _ore_value {
     ore_hash* h;
     ore_func f;
     ore_env* e;
+    ore_class* c;
+    ore_object* o;
   } v;
 } ore_value;
 
@@ -137,10 +159,6 @@ typedef struct {
   mpc_ast_t *root;
   mpc_parser_t *program;
 } ore_parse_context;
-
-void ore_value_ref(ore_value);
-void ore_value_unref(ore_value);
-void ore_p(ore_value);
 
 KHASH_MAP_INIT_STR(value, ore_value)
 KLIST_INIT(value, ore_value, ore_value_free)
@@ -150,14 +168,25 @@ typedef kliter_t(value) ore_array_iter_t;
 typedef khash_t(value) ore_hash_t;
 typedef khiter_t ore_hash_iter_t;
 
+void ore_value_ref(ore_value);
+void ore_value_unref(ore_value);
+void ore_p(ore_value);
+
 typedef struct _ore_context {
   khash_t(value)* env;
   struct _ore_context* parent;
+  khash_t(value)* ct;
+  void* c;
   int err;
 } ore_context;
 
 typedef ore_value (*ore_cfunc_t)(ore_context*, int, ore_value*, void*);
 
+void ore_define(ore_context*, const char*, ore_value);
+void ore_define_cfunc(ore_context*, const char*, int, ore_cfunc_t, void*);
+void ore_set(ore_context*, const char*, ore_value);
+ore_value ore_prop(ore_context*, const char*);
+ore_value ore_get(ore_context*, const char*);
 ore_value ore_call(ore_context*, mpc_ast_t*);
 ore_value ore_eval(ore_context*, mpc_ast_t*);
 ore_context* ore_new(ore_context*);
@@ -165,10 +194,41 @@ void ore_destroy(ore_context*);
 
 int verbose = 0;
 
+const char*
+ore_kind(ore_value v) {
+  switch (v.t) {
+    case ORE_TYPE_NIL:
+      return "nil";
+    case ORE_TYPE_BOOL:
+      return "bool";
+    case ORE_TYPE_INT:
+      return "int";
+    case ORE_TYPE_FLOAT:
+      return "float";
+    case ORE_TYPE_STRING:
+      return "string";
+    case ORE_TYPE_CFUNC:
+      return "func";
+    case ORE_TYPE_FUNC:
+      return "func";
+    case ORE_TYPE_ARRAY:
+      return "array";
+    case ORE_TYPE_HASH:
+      return "hash";
+    case ORE_TYPE_ENV:
+      return "env";
+    case ORE_TYPE_CLASS:
+      return "class";
+    case ORE_TYPE_OBJECT:
+      return "object";
+  }
+  return "unknown";
+}
+
 void
 ore_value_real_free(ore_value v) {
   switch (v.t) {
-    case ORE_TYPE_STR:
+    case ORE_TYPE_STRING:
       if (verbose)
         printf("free str %s\n", v.v.s->p);
       free(v.v.s->p);
@@ -193,8 +253,6 @@ ore_value_real_free(ore_value v) {
       if (verbose)
         printf("free env %p\n", v.v.e->p);
       ore_destroy((ore_context*) v.v.e->p);
-      //kh_destroy(value, v.v.e->p);
-      //free(v.v.e);
       v.v.e = NULL;
       break;
   }
@@ -209,7 +267,7 @@ ore_value_free(void *p) {
 void
 ore_value_ref(ore_value v) {
   switch (v.t) {
-    case ORE_TYPE_STR:
+    case ORE_TYPE_STRING:
       v.v.s->ref++;
       if (verbose)
         printf("ref str %d %p\n", v.v.s->ref, v.v.s->p);
@@ -235,7 +293,7 @@ ore_value_ref(ore_value v) {
 void
 ore_value_unref(ore_value v) {
   switch (v.t) {
-    case ORE_TYPE_STR:
+    case ORE_TYPE_STRING:
       if (verbose)
         printf("unref str %d %s\n", v.v.s->ref, v.v.s->p);
       if (--v.v.s->ref <= 0)
@@ -290,8 +348,8 @@ ore_value_false() {
 int
 ore_is_same_ref(ore_value lhs, ore_value rhs) {
   switch (lhs.t) {
-    case ORE_TYPE_STR:
-      if (rhs.t != ORE_TYPE_STR) return 0;
+    case ORE_TYPE_STRING:
+      if (rhs.t != ORE_TYPE_STRING) return 0;
       return lhs.v.s->p == rhs.v.s->p;
     case ORE_TYPE_ARRAY:
       if (rhs.t != ORE_TYPE_ARRAY) return 0;
@@ -315,13 +373,17 @@ ore_is_true(ore_value v) {
       return v.v.i != 0;
     case ORE_TYPE_FLOAT:
       return v.v.d != 0;
-    case ORE_TYPE_STR:
+    case ORE_TYPE_STRING:
       return v.v.s->l > 0;
     case ORE_TYPE_ARRAY:
       return 1; // TODO
     case ORE_TYPE_HASH:
       return 1; // TODO
     case ORE_TYPE_ENV:
+      return 1; // TODO
+    case ORE_TYPE_CLASS:
+      return 1; // TODO
+    case ORE_TYPE_OBJECT:
       return 1; // TODO
   }
   return 0;
@@ -374,6 +436,50 @@ ore_value_hash_from_khash(ore_context* ore, ore_hash_t* p) {
 }
 
 ore_value
+ore_define_class(ore_context* ore, mpc_ast_t* t) {
+  ore_value v = { ORE_TYPE_CLASS };
+  v.v.c = (ore_class*) malloc(sizeof(ore_class));
+  if (!v.v.c) {
+    fprintf(stderr, "Failed to allocate memory\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  v.v.c->n = t->children[1]->contents;
+  v.v.c->t = t->children[3];
+  ore_context* g = ore;
+  while (g->parent) g = g->parent;
+  ore_define(g, v.v.c->n, v);
+  return v;
+}
+
+ore_value
+ore_object_new(ore_context* ore, mpc_ast_t* t) {
+  ore_context* g = ore;
+  while (g->parent) g = g->parent;
+  ore_value clazz = ore_get(g, t->children[1]->contents);
+  if (clazz.t != ORE_TYPE_CLASS) {
+    fprintf(stderr, "Unknown class '%s'\n", t->children[1]->contents);
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+
+  ore_context* this = ore_new(ore);
+
+  ore_value v = { ORE_TYPE_OBJECT };
+  v.v.o = (ore_object*) malloc(sizeof(ore_object));
+  if (!v.v.o) {
+    fprintf(stderr, "Failed to allocate memory\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  v.v.o->c = clazz.v.c;
+  v.v.o->e = this;
+  ore_eval(this, clazz.v.c->t);
+  ore_define(this, "this", v);
+  return v;
+}
+
+ore_value
 ore_value_env_from_context(ore_context* p) {
   ore_value v = { ORE_TYPE_ENV };
   v.v.e = (ore_env*) malloc(sizeof(ore_env));
@@ -389,7 +495,7 @@ ore_value_env_from_context(ore_context* p) {
 
 ore_value
 ore_value_str_from_ptr(ore_context* ore, char* p, int l) {
-  ore_value v = { ORE_TYPE_STR };
+  ore_value v = { ORE_TYPE_STRING };
   v.v.s = (ore_string*) malloc(sizeof(ore_string));
   if (!v.v.s) {
     fprintf(stderr, "Failed to allocate memory\n");
@@ -404,7 +510,7 @@ ore_value_str_from_ptr(ore_context* ore, char* p, int l) {
 
 ore_value
 ore_parse_str(ore_context* ore, const char* s) {
-  ore_value v = { ORE_TYPE_STR };
+  ore_value v = { ORE_TYPE_STRING };
   char* t = strdup(s);
   char* p = t + 1;
   char* ps = p;
@@ -444,7 +550,7 @@ ore_value
 ore_cfunc_len(ore_context* ore, int num_in, ore_value* args, void* u) {
   ore_value v = { ORE_TYPE_INT };
   switch (args[0].t) {
-    case ORE_TYPE_STR:
+    case ORE_TYPE_STRING:
       v.v.i = strlen(args[0].v.s->p);
       return v;
     case ORE_TYPE_ARRAY:
@@ -463,11 +569,16 @@ ore_cfunc_len(ore_context* ore, int num_in, ore_value* args, void* u) {
 }
 
 ore_value
+ore_cfunc_typeof(ore_context* ore, int num_in, ore_value* args, void* u) {
+  return ore_value_str_from_ptr(ore, (char*) ore_kind(args[0]), -1);
+}
+
+ore_value
 ore_cfunc_load(ore_context* ore, int num_in, ore_value* args, void* u) {
   ore_parse_context* pctx = (ore_parse_context*) u;
 
   mpc_result_t result;
-  if (args[0].t != ORE_TYPE_STR) {
+  if (args[0].t != ORE_TYPE_STRING) {
     fprintf(stderr, "Argument should be string\n");
     ore->err = ORE_ERROR_EXCEPTION;
     return ore_value_nil();
@@ -496,33 +607,6 @@ ore_cfunc_exit(ore_context* ore, int num_in, ore_value* args, void* u) {
   return ore_value_nil();
 }
 
-const char*
-ore_kind(ore_value v) {
-  switch (v.t) {
-    case ORE_TYPE_NIL:
-      return "nil";
-    case ORE_TYPE_BOOL:
-      return "bool";
-    case ORE_TYPE_INT:
-      return "int";
-    case ORE_TYPE_FLOAT:
-      return "float";
-    case ORE_TYPE_STR:
-      return "string";
-    case ORE_TYPE_CFUNC:
-      return "func";
-    case ORE_TYPE_FUNC:
-      return "func";
-    case ORE_TYPE_ARRAY:
-      return "array";
-    case ORE_TYPE_HASH:
-      return "hash";
-    case ORE_TYPE_ENV:
-      return "env";
-  }
-  return "unknown";
-}
-
 char*
 ore_value_to_str(ore_context* ore, ore_value v) {
   kstring_t ks = { 0, 0, NULL };
@@ -543,7 +627,7 @@ ore_value_to_str(ore_context* ore, ore_value v) {
     case ORE_TYPE_FLOAT:
       ksprintf(&ks, "%f", v.v.d);
       break;
-    case ORE_TYPE_STR:
+    case ORE_TYPE_STRING:
       kputs(v.v.s->p, &ks);
       break;
     case ORE_TYPE_ARRAY:
@@ -556,7 +640,9 @@ ore_value_to_str(ore_context* ore, ore_value v) {
           if (k != b) {
             kputc(',', &ks);
           }
-          kputs(ore_value_to_str(ore, kl_val(k)), &ks);
+          char* s = ore_value_to_str(ore, kl_val(k));
+          kputs(s, &ks);
+          free(s);
         }
         kputc(']', &ks);
       }
@@ -590,6 +676,12 @@ ore_value_to_str(ore_context* ore, ore_value v) {
     case ORE_TYPE_ENV:
       ksprintf(&ks, "<env-0x%p>", v.v.e->p);
       break;
+    case ORE_TYPE_CLASS:
+      kputs(v.v.c->n, &ks);
+      break;
+    case ORE_TYPE_OBJECT:
+      ksprintf(&ks, "<%s-0x%p>", v.v.o->c->n, v.v.o);
+      break;
     default:
       kputs("<unknown>", &ks);
       break;
@@ -608,74 +700,9 @@ ore_cfunc_print(ore_context* ore, int num_in, ore_value* args, void* u) {
   for (i = 0; i < num_in; i++) {
     if (i != 0) printf(", ");
     ore_value v = args[i];
-    switch (v.t) {
-      case ORE_TYPE_NIL:
-        printf("nil");
-        break;
-      case ORE_TYPE_BOOL:
-        if (v.v.b)
-          printf("true");
-        else
-          printf("false");
-        break;
-      case ORE_TYPE_INT:
-        printf("%d", v.v.i);
-        break;
-      case ORE_TYPE_FLOAT:
-        printf("%f", v.v.d);
-        break;
-      case ORE_TYPE_STR:
-        printf("%s", v.v.s->p);
-        break;
-      case ORE_TYPE_ARRAY:
-        {
-          ore_array_t* a = (ore_array_t*) v.v.a->p;
-          ore_array_iter_t* k;
-          ore_array_iter_t* b = kl_begin(a);
-          printf("[");
-          for (k = b; k != kl_end(a); k = kl_next(k)) {
-            if (k != b) {
-              printf(",");
-            }
-            ore_value pa[] = { kl_val(k) };
-            ore_cfunc_print(ore, 1, pa, NULL);
-          }
-          printf("]");
-        }
-        break;
-      case ORE_TYPE_HASH:
-        {
-          ore_hash_t* h = (ore_hash_t*) v.v.h->p;
-          ore_hash_iter_t k;
-          int n = 0;
-          printf("{");
-          for (k = kh_begin(h); k != kh_end(h); k++) {
-		    if (!kh_exist(h, k)) continue;						\
-            if (n > 0) {
-              printf(",");
-            }
-            const char* key = kh_key(h, k);
-            printf("%s: ", key);
-            ore_value pa[] = { kh_val(h, k) };
-            ore_cfunc_print(ore, 1, pa, NULL);
-            n++;
-          }
-          printf("}");
-        }
-        break;
-      case ORE_TYPE_FUNC:
-        printf("<func-0x%p>", v.v.f.x.o);
-        break;
-      case ORE_TYPE_CFUNC:
-        printf("<func-0x%p>", v.v.f.x.c);
-        break;
-      case ORE_TYPE_ENV:
-        printf("<env>");
-        break;
-      default:
-        printf("<unknown>");
-        break;
-    }
+    char* s = ore_value_to_str(ore, v);
+    printf("%s", s);
+    free(s);
   }
   return ore_value_nil();
 }
@@ -717,6 +744,21 @@ ore_cfunc_dump_env(ore_context* ore, int num_in, ore_value* args, void* u) {
 void
 ore_p(ore_value v) {
   ore_cfunc_println(NULL, 1, &v, NULL);
+}
+
+ore_value
+ore_prop(ore_context* ore, const char* name) {
+  ore_context* p = ore;
+  if (!p)
+    return ore_value_nil();
+  khint_t k;
+  k = kh_get(value, p->env, name);
+  if (k != kh_end(p->env)) {
+    return kh_value(p->env, k);
+  }
+  fprintf(stderr, "Unknown identifier '%s'\n", name);
+  ore->err = ORE_ERROR_EXCEPTION;
+  return ore_value_nil();
 }
 
 ore_value
@@ -765,7 +807,7 @@ ore_set(ore_context* ore, const char* name, ore_value v) {
   }
 }
 
-ore_value
+void
 ore_define(ore_context* ore, const char* name, ore_value v) {
   int r;
   ore_value old = ore_value_nil();
@@ -914,7 +956,7 @@ ore_value* ore_index_ref(ore_context* ore, ore_value v, ore_value e, int update)
     return NULL;
   }
   if (v.t == ORE_TYPE_HASH) {
-    if (e.t != ORE_TYPE_STR) {
+    if (e.t != ORE_TYPE_STRING) {
       fprintf(stderr, "Hash index should be string\n");
       ore->err = ORE_ERROR_EXCEPTION;
       return NULL;
@@ -937,7 +979,26 @@ ore_value* ore_index_ref(ore_context* ore, ore_value v, ore_value e, int update)
     }
     return NULL;
   }
-  fprintf(stderr, "Invalid index operation for %s\n", ore_kind(v));
+  if (v.t == ORE_TYPE_OBJECT) {
+    ore_context* this = (ore_context*) v.v.o->e;
+    if (update) {
+      int r;
+      khint_t k = kh_get(value, this->env, e.v.s->p);
+      if (k != kh_end(ore->env)) {
+        ore_value old = kh_value(ore->env, k);
+        ore_value_unref(old);
+      }
+      k = kh_put(value, this->env, e.v.s->p, &r);
+      return &kh_value(this->env, k);
+    } else {
+      khint_t k = kh_get(value, this->env, e.v.s->p);
+      if (k != kh_end(ore->env)) {
+        return &kh_value(this->env, k);
+      }
+    }
+    return NULL;
+  }
+  fprintf(stderr, "Invalid operation for %s\n", ore_kind(v));
   ore->err = ORE_ERROR_EXCEPTION;
   return NULL;
 }
@@ -980,7 +1041,7 @@ ore_expr(ore_context* ore, mpc_ast_t* t) {
           }
         }
         break;
-      case ORE_TYPE_STR:
+      case ORE_TYPE_STRING:
         {
           char buf[32], *p = buf;
           if (!strcmp(op, "+")) {
@@ -988,7 +1049,7 @@ ore_expr(ore_context* ore, mpc_ast_t* t) {
               sprintf(buf, "%i", rhs.v.i);
             else if (rhs.t == ORE_TYPE_FLOAT)
               sprintf(buf, "%f", rhs.v.d);
-            else if (rhs.t == ORE_TYPE_STR)
+            else if (rhs.t == ORE_TYPE_STRING)
               p = rhs.v.s->p;
             else {
               fprintf(stderr, "Unknown operator '%s' for string\n", op);
@@ -1033,7 +1094,7 @@ ore_cmp_eq(ore_context* ore, ore_value lhs, ore_value rhs) {
       if (rhs.t == ORE_TYPE_INT && lhs.v.d == rhs.v.i) return 1;
       if (rhs.t == ORE_TYPE_FLOAT && lhs.v.d == rhs.v.d) return 1;
       return 0;
-    case ORE_TYPE_STR:
+    case ORE_TYPE_STRING:
       if (lhs.t == rhs.t && lhs.v.s->l == rhs.v.s->l &&
           !memcmp(lhs.v.s->p, rhs.v.s->p, lhs.v.s->l))
         return 1;
@@ -1141,12 +1202,23 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   }
   if (is_a(t, "item")) {
     ore_value v = ore_eval(ore, t->children[0]);
-    ore_value e = ore_eval(ore, t->children[2]);
-    ore_value* r = ore_index_ref(ore, v, e, 0);
-    if (r == NULL) {
-      return ore_value_nil();
+    ore_value e = ore_value_nil();
+    for (i = 2; i < t->children_num; i += 3) {
+      ore_value key = ore_eval(ore, t->children[i]);
+      ore_value* r = ore_index_ref(ore, v, key, 0);
+      v = r == NULL ? ore_value_nil() : *r;
     }
-    return *r;
+    return v;
+  }
+  if (is_a(t, "prop")) {
+    ore_value v = ore_eval(ore, t->children[0]);
+    ore_value e = ore_value_nil();
+    ore_context* this = (ore_context*) v.v.o->e;
+    for (i = 2; i < t->children_num; i += 2) {
+      v = ore_prop(this, t->children[i]->contents);
+      if (v.t == ORE_TYPE_OBJECT) this = (ore_context*) v.v.o->e;
+    }
+    return v;
   }
   if (is_a(t, "ident")) {
     return ore_get(ore, t->contents);
@@ -1164,12 +1236,17 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   }
   if (is_a(t, "let_a")) {
     ore_value lhs = ore_eval(ore, t->children[0]->children[0]);
-    ore_value i = ore_eval(ore, t->children[0]->children[2]);
-    ore_value rhs = ore_eval(ore, t->children[2]);
-    ore_value* r = ore_index_ref(ore, lhs, i, 1);
+    ore_value e = ore_value_nil();
+    ore_value* r = NULL;
+    for (i = 2; i < t->children[0]->children_num - 1; i += 3) {
+      ore_value key = ore_eval(ore, t->children[0]->children[i]);
+      r = ore_index_ref(ore, lhs, key, 0);
+      lhs = r == NULL ? ore_value_nil() : *r;
+    }
     if (r == NULL) {
       return ore_value_nil();
     }
+    ore_value rhs = ore_eval(ore, t->children[2]);
     ore_value_ref(rhs);
     *r = rhs;
     return rhs;
@@ -1189,7 +1266,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     v.v.f.ore = ore;
     v.v.f.num_in = -1;
     v.v.f.x.o = t;
-    ore_set(ore, t->children[1]->contents, v);
+    ore_define(ore, t->children[1]->contents, v);
     return v;
   }
   if (is_a(t, "lambda")) {
@@ -1198,6 +1275,12 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     v.v.f.num_in = -1;
     v.v.f.x.o = t;
     return v;
+  }
+  if (is_a(t, "class")) {
+    return ore_define_class(ore, t);
+  }
+  if (is_a(t, "new")) {
+    return ore_object_new(ore, t);
   }
   if (is_a(t, "call")) {
     return ore_call(ore, t);
@@ -1284,7 +1367,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     ore_destroy(env);
     return v;
   }
-  if (is_a(t, "stmts") || t->tag[0] == '>') {
+  if (is_a(t, "stmts") || is_a(t, "template") || t->tag[0] == '>') {
     ore_value v;
     for (i = 0; i < t->children_num; i++) {
       v = ore_eval(ore, t->children[i]);
@@ -1312,6 +1395,7 @@ ore_new(ore_context* parent) {
     return NULL;
   }
   ore->env = kh_init(value);
+  ore->ct = kh_init(value);
   ore->err = ORE_ERROR_NONE;
   ore->parent = parent;
   return ore;
@@ -1354,50 +1438,56 @@ int main(int argc, char **argv) {
     exit(1);
   }
 
-  mpc_parser_t* True     = mpc_new("true");
-  mpc_parser_t* False    = mpc_new("false");
-  mpc_parser_t* Nil      = mpc_new("nil");
-  mpc_parser_t* Number   = mpc_new("number");
-  mpc_parser_t* Factor   = mpc_new("factor");
-  mpc_parser_t* String   = mpc_new("string");
-  mpc_parser_t* Array    = mpc_new("array");
-  mpc_parser_t* Pair     = mpc_new("pair");
-  mpc_parser_t* Hash     = mpc_new("hash");
-  mpc_parser_t* Ident    = mpc_new("ident");
-  mpc_parser_t* Cmp      = mpc_new("cmp");
-  mpc_parser_t* Term     = mpc_new("term");
-  mpc_parser_t* Lexp     = mpc_new("lexp");
-  mpc_parser_t* LetV     = mpc_new("let_v");
-  mpc_parser_t* Value    = mpc_new("value");
-  mpc_parser_t* Item     = mpc_new("item");
-  mpc_parser_t* LetA     = mpc_new("let_a");
-  mpc_parser_t* If       = mpc_new("if");
-  mpc_parser_t* IfStmt   = mpc_new("if_stmt");
-  mpc_parser_t* ElseIf   = mpc_new("else_if");
-  mpc_parser_t* Else     = mpc_new("else");
-  mpc_parser_t* While    = mpc_new("while");
-  mpc_parser_t* ForIn    = mpc_new("for_in");
-  mpc_parser_t* Break    = mpc_new("break");
-  mpc_parser_t* Continue = mpc_new("continue");
-  mpc_parser_t* Var      = mpc_new("var");
-  mpc_parser_t* Vararg   = mpc_new("vararg");
-  mpc_parser_t* Func     = mpc_new("func");
-  mpc_parser_t* Lambda   = mpc_new("lambda");
-  mpc_parser_t* Call     = mpc_new("call");
-  mpc_parser_t* Anoncall = mpc_new("anoncall");
-  mpc_parser_t* Return   = mpc_new("return");
-  mpc_parser_t* Comment  = mpc_new("comment");
-  mpc_parser_t* Eof      = mpc_new("eof");
-  mpc_parser_t* Stmt     = mpc_new("stmt");
-  mpc_parser_t* Stmts    = mpc_new("stmts");
-  mpc_parser_t* Program  = mpc_new("program");
+  mpc_parser_t* True       = mpc_new("true");
+  mpc_parser_t* False      = mpc_new("false");
+  mpc_parser_t* Nil        = mpc_new("nil");
+  mpc_parser_t* Number     = mpc_new("number");
+  mpc_parser_t* Factor     = mpc_new("factor");
+  mpc_parser_t* String     = mpc_new("string");
+  mpc_parser_t* Array      = mpc_new("array");
+  mpc_parser_t* Pair       = mpc_new("pair");
+  mpc_parser_t* Hash       = mpc_new("hash");
+  mpc_parser_t* Ident      = mpc_new("ident");
+  mpc_parser_t* Cmp        = mpc_new("cmp");
+  mpc_parser_t* Term       = mpc_new("term");
+  mpc_parser_t* Lexp       = mpc_new("lexp");
+  mpc_parser_t* LetV       = mpc_new("let_v");
+  mpc_parser_t* Value      = mpc_new("value");
+  mpc_parser_t* Item       = mpc_new("item");
+  mpc_parser_t* Prop       = mpc_new("prop");
+  mpc_parser_t* LetA       = mpc_new("let_a");
+  mpc_parser_t* If         = mpc_new("if");
+  mpc_parser_t* IfStmt     = mpc_new("if_stmt");
+  mpc_parser_t* ElseIf     = mpc_new("else_if");
+  mpc_parser_t* Else       = mpc_new("else");
+  mpc_parser_t* While      = mpc_new("while");
+  mpc_parser_t* ForIn      = mpc_new("for_in");
+  mpc_parser_t* Break      = mpc_new("break");
+  mpc_parser_t* Continue   = mpc_new("continue");
+  mpc_parser_t* Var        = mpc_new("var");
+  mpc_parser_t* Vararg     = mpc_new("vararg");
+  mpc_parser_t* Lambda     = mpc_new("lambda");
+  mpc_parser_t* Func       = mpc_new("func");
+  mpc_parser_t* Template   = mpc_new("template");
+  mpc_parser_t* Class      = mpc_new("class");
+  mpc_parser_t* New        = mpc_new("new");
+  mpc_parser_t* Call       = mpc_new("call");
+  mpc_parser_t* Anoncall   = mpc_new("anoncall");
+  mpc_parser_t* MethodCall = mpc_new("methodcall");
+  mpc_parser_t* Return     = mpc_new("return");
+  mpc_parser_t* Comment    = mpc_new("comment");
+  mpc_parser_t* Eof        = mpc_new("eof");
+  mpc_parser_t* Stmt       = mpc_new("stmt");
+  mpc_parser_t* Stmts      = mpc_new("stmts");
+  mpc_parser_t* Program    = mpc_new("program");
 
   mpc_err_t* err = mpca_lang(MPCA_LANG_DEFAULT, STRUCTURE,
       True, False, Nil,
       Number, Factor, String, Array, Pair, Hash, Ident, Cmp,
       If, IfStmt, ElseIf, Else, While, ForIn, Break, Continue,
-      Term, Lexp, LetV, Value, Item, LetA, Var, Vararg,
-      Lambda, Func, Call, Anoncall, Return, Comment, Eof,
+      Term, Lexp, LetV, Value, Item, Prop, LetA, Var, Vararg,
+      Lambda, Func, Class, Template, New, Call, Anoncall, MethodCall,
+      Return, Comment, Eof,
       Stmt, Stmts, Program);
   if (err != NULL) {
     mpc_err_print(err);
@@ -1416,6 +1506,7 @@ int main(int argc, char **argv) {
   ore_define_cfunc(ore, "print", -1, ore_cfunc_print, NULL);
   ore_define_cfunc(ore, "println", -1, ore_cfunc_println, NULL);
   ore_define_cfunc(ore, "len", 1, ore_cfunc_len, NULL);
+  ore_define_cfunc(ore, "typeof", 1, ore_cfunc_typeof, NULL);
   ore_define_cfunc(ore, "load", 1, ore_cfunc_load, &pc);
   ore_define_cfunc(ore, "exit", 1, ore_cfunc_exit, NULL);
   ore_array_t* args = kl_init(value);
@@ -1461,12 +1552,13 @@ int main(int argc, char **argv) {
   ore_destroy(ore);
 
 leave:
-  mpc_cleanup(36,
+  mpc_cleanup(41,
       True, False, Nil,
       Number, Factor, String, Array, Pair, Hash, Ident, Cmp,
       If, IfStmt, ElseIf, Else, While, ForIn, Break, Continue,
-      Term, Lexp, LetV, Value, Item, LetA, Var, Vararg,
-      Lambda, Func, Call, Anoncall, Return, Comment, Eof,
+      Term, Lexp, LetV, Value, Item, Prop, LetA, Var, Vararg,
+      Lambda, Func, Class, Template, New, Call, Anoncall, MethodCall,
+      Return, Comment, Eof,
       Stmt, Stmts, Program);
   return 0;
 }
