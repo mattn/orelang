@@ -565,7 +565,7 @@ ore_object_new(ore_context* ore, mpc_ast_t* t) {
   }
   v.v.o->c = clazz.v.c;
   v.v.o->e = this;
-  v.v.o->ref = 0;
+  v.v.o->ref = -1;
   ore_eval(this, ore_find_statements(clazz.v.c->t));
   ore_define(this, "this", v);
   ore_value initialize = ore_prop(this, "__initialize__");
