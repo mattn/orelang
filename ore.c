@@ -1608,9 +1608,6 @@ int main(int argc, char **argv) {
   }
   ore_define(ore, "args", ore_value_array_from_klist(ore, args));
 
-  ore_value cx = orex_define_class(ore, "Socket");
-  orex_define_method(ore, cx, "connect", 1, ore_cfunc_len, NULL);
-
   if (f > 0) {
     if (!mpc_parse_contents(argv[f], Program, &result)) {
       mpc_err_print(result.error);
