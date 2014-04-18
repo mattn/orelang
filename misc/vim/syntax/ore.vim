@@ -9,11 +9,14 @@ syn keyword     oreDeclaration       var
 hi def link     oreDirective         Statement
 hi def link     oreDeclaration       Type
 
+syn keyword     oreOperator          new delete typeof
+
 syn keyword     oreStatement         return break continue throw
 syn keyword     oreConditional       if else switch try catch finally
 syn keyword     oreLabel             case default
 syn keyword     oreRepeat            for while
 
+hi def link     oreOperator          Operator
 hi def link     oreStatement         Statement
 hi def link     oreConditional       Conditional
 hi def link     oreLabel             Label
@@ -21,6 +24,8 @@ hi def link     oreRepeat            Repeat
 
 syn match       oreDeclaration       /\<func\>/
 syn match       oreDeclaration       /^func\>/
+syn match       oreDeclaration       /\<class\>/
+syn match       oreDeclaration       /^class\>/
 
 syn keyword     oreBuiltins          keys len
 syn keyword     oreBuiltins          println printf print
