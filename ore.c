@@ -261,6 +261,10 @@ ore_value_real_free(ore_value v) {
     case ORE_TYPE_OBJECT:
       if (verbose)
         printf("free object %p\n", v.v.o);
+      ore_value terminate = ore_prop(v.v.o->e, "__terminate__");
+      if (terminate.t == ORE_TYPE_FUNC) {
+        ore_func_call(v.v.o->e, terminate, 0, NULL);
+      }
       free(v.v.o);
       v.v.o = NULL;
       break;
@@ -473,6 +477,18 @@ ore_define_class(ore_context* ore, mpc_ast_t* t) {
   return v;
 }
 
+mpc_ast_t*
+ore_find_statements(mpc_ast_t* t) {
+  mpc_ast_t* stmt = NULL;
+  int i;
+  for (i = 0; i < t->children_num; i++) {
+    if (is_a(t->children[i], "char") && t->children[i]->contents[0] == '{') {
+      return t->children[i+1];
+    }
+  }
+  return NULL;
+}
+
 ore_value*
 ore_bind_args(ore_context* ore, mpc_ast_t* f, ore_context* this, mpc_ast_t* t) {
   int num_in = t->children_num / 2 - 1, n = 0, i;
@@ -550,12 +566,12 @@ ore_object_new(ore_context* ore, mpc_ast_t* t) {
   v.v.o->c = clazz.v.c;
   v.v.o->e = this;
   v.v.o->ref = 0;
-  ore_eval(this, clazz.v.c->t);
+  ore_eval(this, ore_find_statements(clazz.v.c->t));
   ore_define(this, "this", v);
-  ore_value init = ore_prop(this, "__init__");
-  if (init.t == ORE_TYPE_FUNC) {
-    ore_value* args = ore_bind_args(ore, init.v.f.x.o, this, t);
-    ore_func_call(this, init, 0, NULL);
+  ore_value initialize = ore_prop(this, "__initialize__");
+  if (initialize.t == ORE_TYPE_FUNC) {
+    ore_value* args = ore_bind_args(ore, initialize.v.f.x.o, this, t);
+    ore_func_call(this, initialize, 0, NULL);
   }
   return v;
 }
@@ -908,18 +924,6 @@ ore_define_cfunc(ore_context* ore, const char* name, int num_in, ore_cfunc_t c, 
   v.v.f.x.c = c;
   v.v.f.u = u;
   ore_define(ore, name, v);
-}
-
-mpc_ast_t*
-ore_find_statements(mpc_ast_t* t) {
-  mpc_ast_t* stmt = NULL;
-  int i;
-  for (i = 0; i < t->children_num; i++) {
-    if (is_a(t->children[i], "char") && t->children[i]->contents[0] == '{') {
-      return t->children[i+1];
-    }
-  }
-  return NULL;
 }
 
 ore_value
@@ -1511,7 +1515,7 @@ ore_new(ore_context* parent) {
 #define unref_code(v) {\
   ore_value_unref(v); \
   if (verbose) \
-    printf("unref %d\n", v.t); \
+    printf("unref %s\n", ore_kind(v)); \
 };
 
 

@@ -1,7 +1,10 @@
 class Foo {
   var a = 0;
-  func __init__(x, y) {
+  func __initialize__(x, y) {
     this.a = x + y;
+  }
+  func __terminate__() {
+    println("terminate");
   }
   func sing() {
     this.say("foo");
