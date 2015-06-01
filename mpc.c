@@ -112,7 +112,7 @@ void mpc_err_print_to(mpc_err_t *x, FILE *f) {
   free(str);
 }
 
-void mpc_err_string_cat(char *buffer, int *pos, int *max, char *fmt, ...) {
+void mpc_err_string_cat(char *buffer, int *pos, int *max, char const *fmt, ...) {
   /* TODO: Error Checking on Length */
   int left = ((*max) - (*pos));
   va_list va;
@@ -122,13 +122,14 @@ void mpc_err_string_cat(char *buffer, int *pos, int *max, char *fmt, ...) {
   va_end(va);
 }
 
-static char char_unescape_buffer[3];
+static char char_unescape_buffer[4];
 
-static char *mpc_err_char_unescape(char c) {
+static const char *mpc_err_char_unescape(char c) {
   
   char_unescape_buffer[0] = '\'';
   char_unescape_buffer[1] = ' ';
   char_unescape_buffer[2] = '\'';
+  char_unescape_buffer[3] = '\0';
   
   switch (c) {
     
@@ -149,17 +150,15 @@ static char *mpc_err_char_unescape(char c) {
 }
 
 char *mpc_err_string(mpc_err_t *x) {
-  
-  char *buffer = calloc(1, 1024);
-  int max = 1023;
+
+  int i;  
   int pos = 0; 
-  int i;
+  int max = 1023;
+  char *buffer = calloc(1, 1024);
   
   if (x->failure) {
     mpc_err_string_cat(buffer, &pos, &max,
-    "error: %s\n", 
-      x->filename, x->state.row+1, 
-      x->state.col+1, x->failure);
+    "%s: error: %s\n", x->filename, x->failure);
     return buffer;
   }
   
@@ -327,7 +326,7 @@ typedef struct {
   int backtrack;
   int marks_num;
   mpc_state_t* marks;
-  int* lasts;
+  char* lasts;
   
   char last;
   
@@ -353,7 +352,7 @@ static mpc_input_t *mpc_input_new_string(const char *filename, const char *strin
   i->marks = NULL;
   i->lasts = NULL;
 
-  i->last = -1;
+  i->last = '\0';
   
   return i;
 }
@@ -377,7 +376,7 @@ static mpc_input_t *mpc_input_new_pipe(const char *filename, FILE *pipe) {
   i->marks = NULL;
   i->lasts = NULL;
   
-  i->last = -1;
+  i->last = '\0';
   
   return i;
   
@@ -401,7 +400,7 @@ static mpc_input_t *mpc_input_new_file(const char *filename, FILE *file) {
   i->marks = NULL;
   i->lasts = NULL;
   
-  i->last = -1;
+  i->last = '\0';
   
   return i;
 }
@@ -427,7 +426,7 @@ static void mpc_input_mark(mpc_input_t *i) {
   
   i->marks_num++;
   i->marks = realloc(i->marks, sizeof(mpc_state_t) * i->marks_num);
-  i->lasts = realloc(i->lasts, sizeof(int) * i->marks_num);
+  i->lasts = realloc(i->lasts, sizeof(char) * i->marks_num);
   i->marks[i->marks_num-1] = i->state;
   i->lasts[i->marks_num-1] = i->last;
   
@@ -443,7 +442,7 @@ static void mpc_input_unmark(mpc_input_t *i) {
   
   i->marks_num--;
   i->marks = realloc(i->marks, sizeof(mpc_state_t) * i->marks_num);
-  i->lasts = realloc(i->lasts, sizeof(int) * i->marks_num);
+  i->lasts = realloc(i->lasts, sizeof(char) * i->marks_num);
   
   if (i->type == MPC_INPUT_PIPE && i->marks_num == 0) {
     free(i->buffer);
@@ -457,7 +456,7 @@ static void mpc_input_rewind(mpc_input_t *i) {
   if (i->backtrack < 1) { return; }
   
   i->state = i->marks[i->marks_num-1];
-  i->last = i->lasts[i->marks_num-1];
+  i->last  = i->lasts[i->marks_num-1];
   
   if (i->type == MPC_INPUT_FILE) {
     fseek(i->file, i->state.pos, SEEK_SET);
@@ -467,7 +466,7 @@ static void mpc_input_rewind(mpc_input_t *i) {
 }
 
 static int mpc_input_buffer_in_range(mpc_input_t *i) {
-  return i->state.pos < (strlen(i->buffer) + i->marks[0].pos);
+  return i->state.pos < (long)(strlen(i->buffer) + i->marks[0].pos);
 }
 
 static char mpc_input_buffer_get(mpc_input_t *i) {
@@ -475,7 +474,7 @@ static char mpc_input_buffer_get(mpc_input_t *i) {
 }
 
 static int mpc_input_terminated(mpc_input_t *i) {
-  if (i->type == MPC_INPUT_STRING && i->state.pos == strlen(i->string)) { return 1; }
+  if (i->type == MPC_INPUT_STRING && i->state.pos == (long)strlen(i->string)) { return 1; }
   if (i->type == MPC_INPUT_FILE && feof(i->file)) { return 1; }
   if (i->type == MPC_INPUT_PIPE && feof(i->file)) { return 1; }
   return 0;
@@ -483,67 +482,71 @@ static int mpc_input_terminated(mpc_input_t *i) {
 
 static char mpc_input_getc(mpc_input_t *i) {
   
-  char c;
+  char c = '\0';
+  
   switch (i->type) {
     
-    case MPC_INPUT_STRING: c = i->string[i->state.pos]; break;
-    case MPC_INPUT_FILE: c = fgetc(i->file); break;
+    case MPC_INPUT_STRING: return i->string[i->state.pos];
+    case MPC_INPUT_FILE: c = fgetc(i->file); return c;
     case MPC_INPUT_PIPE:
     
-      if (!i->buffer) { c = getc(i->file); break; }
+      if (!i->buffer) { c = getc(i->file); return c; }
       
       if (i->buffer && mpc_input_buffer_in_range(i)) {
         c = mpc_input_buffer_get(i);
+        return c;
       } else {
         c = getc(i->file);
+        return c;
       }
     
-    break;
-    
+    default: return c;
   }
-  
-  return c;
 }
 
 static char mpc_input_peekc(mpc_input_t *i) {
   
-  char c;
+  char c = '\0';
   
   switch (i->type) {
     case MPC_INPUT_STRING: return i->string[i->state.pos];
     case MPC_INPUT_FILE: 
       
+      c = fgetc(i->file);
       if (feof(i->file)) { return '\0'; }
       
-      c = fgetc(i->file);
       fseek(i->file, -1, SEEK_CUR);
-      break;
+      return c;
     
     case MPC_INPUT_PIPE:
       
-      if (feof(i->file)) { return '\0'; }
-      
-      if (!i->buffer) { c = getc(i->file); ungetc(c, i->file); break; }
+      if (!i->buffer) {
+        c = getc(i->file);
+        if (feof(i->file)) { return '\0'; }
+        ungetc(c, i->file);
+        return c;
+      }
       
       if (i->buffer && mpc_input_buffer_in_range(i)) {
         return mpc_input_buffer_get(i);
       } else {
-        c = getc(i->file); ungetc(c, i->file);
-        break;
+        c = getc(i->file);
+        if (feof(i->file)) { return '\0'; }
+        ungetc(c, i->file);
+        return c;
       }
-      
+    
+    default: return c;
   }
-  
-  return c;
   
 }
 
 static int mpc_input_failure(mpc_input_t *i, char c) {
 
   switch (i->type) {
-    case MPC_INPUT_STRING: break;
-    case MPC_INPUT_FILE: fseek(i->file, -1, SEEK_CUR); break;
-    case MPC_INPUT_PIPE:
+    case MPC_INPUT_STRING: { break; }
+    case MPC_INPUT_FILE: fseek(i->file, -1, SEEK_CUR); { break; }
+    case MPC_INPUT_PIPE: {
       
       if (!i->buffer) { ungetc(c, i->file); break; }
       
@@ -552,9 +555,9 @@ static int mpc_input_failure(mpc_input_t *i, char c) {
       } else {
         ungetc(c, i->file); 
       }
-      
+    }
+    default: { break; }
   }
-  
   return 0;
 }
 
@@ -585,16 +588,6 @@ static int mpc_input_success(mpc_input_t *i, char c, char **o) {
   }
   
   return 1;
-}
-
-static int mpc_input_eoi(mpc_input_t *i) {
-  char x = mpc_input_getc(i);
-  if (mpc_input_terminated(i)) { return 1; }
-  else { return mpc_input_failure(i, x); }
-}
-
-static int mpc_input_soi(mpc_input_t *i) {
-  return (i->state.pos == 0);
 }
 
 static int mpc_input_any(mpc_input_t *i, char **o) {
@@ -655,18 +648,8 @@ static int mpc_input_string(mpc_input_t *i, const char *c, char **o) {
   return 1;
 }
 
-static int mpc_input_boundary(mpc_input_t* i) {
-  
-  char* word = "abcdefghijklmnopqrstuvwxyz"
-               "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	       "0123456789_";
-	       
-  char peek = mpc_input_peekc(i);
-  if (strchr(word, i->last) && peek == '\0') { return 1; }
-  if (strchr(word, peek) && !strchr(word, i->last)) { return 1; }
-  if (!strchr(word, peek) && strchr(word, i->last)) { return 1; }
-  
-  return 0;
+static int mpc_input_anchor(mpc_input_t* i, int(*f)(char,char)) {
+  return f(i->last, mpc_input_peekc(i));
 }
 
 /*
@@ -680,35 +663,34 @@ enum {
   MPC_TYPE_LIFT      = 3,
   MPC_TYPE_LIFT_VAL  = 4,
   MPC_TYPE_EXPECT    = 5,
-  MPC_TYPE_BOUNDARY  = 6,
+  MPC_TYPE_ANCHOR    = 6,
   MPC_TYPE_STATE     = 7,
   
-  MPC_TYPE_SOI       = 8,
-  MPC_TYPE_EOI       = 9,
-  MPC_TYPE_ANY       = 10,
-  MPC_TYPE_SINGLE    = 11,
-  MPC_TYPE_ONEOF     = 12,
-  MPC_TYPE_NONEOF    = 13,
-  MPC_TYPE_RANGE     = 14,
-  MPC_TYPE_SATISFY   = 15,
-  MPC_TYPE_STRING    = 16,
+  MPC_TYPE_ANY       = 8,
+  MPC_TYPE_SINGLE    = 9,
+  MPC_TYPE_ONEOF     = 10,
+  MPC_TYPE_NONEOF    = 11,
+  MPC_TYPE_RANGE     = 12,
+  MPC_TYPE_SATISFY   = 13,
+  MPC_TYPE_STRING    = 14,
   
-  MPC_TYPE_APPLY     = 17,
-  MPC_TYPE_APPLY_TO  = 18,
-  MPC_TYPE_PREDICT   = 19,
-  MPC_TYPE_NOT       = 20,
-  MPC_TYPE_MAYBE     = 21,
-  MPC_TYPE_MANY      = 22,
-  MPC_TYPE_MANY1     = 23,
-  MPC_TYPE_COUNT     = 24,
+  MPC_TYPE_APPLY     = 15,
+  MPC_TYPE_APPLY_TO  = 16,
+  MPC_TYPE_PREDICT   = 17,
+  MPC_TYPE_NOT       = 18,
+  MPC_TYPE_MAYBE     = 19,
+  MPC_TYPE_MANY      = 20,
+  MPC_TYPE_MANY1     = 21,
+  MPC_TYPE_COUNT     = 22,
   
-  MPC_TYPE_OR        = 25,
-  MPC_TYPE_AND       = 26
+  MPC_TYPE_OR        = 23,
+  MPC_TYPE_AND       = 24
 };
 
 typedef struct { char *m; } mpc_pdata_fail_t;
 typedef struct { mpc_ctor_t lf; void *x; } mpc_pdata_lift_t;
 typedef struct { mpc_parser_t *x; char *m; } mpc_pdata_expect_t;
+typedef struct { int(*f)(char,char); } mpc_pdata_anchor_t;
 typedef struct { char x; } mpc_pdata_single_t;
 typedef struct { char x; char y; } mpc_pdata_range_t;
 typedef struct { int(*f)(char); } mpc_pdata_satisfy_t;
@@ -725,6 +707,7 @@ typedef union {
   mpc_pdata_fail_t fail;
   mpc_pdata_lift_t lift;
   mpc_pdata_expect_t expect;
+  mpc_pdata_anchor_t anchor;
   mpc_pdata_single_t single;
   mpc_pdata_range_t range;
   mpc_pdata_satisfy_t satisfy;
@@ -977,7 +960,7 @@ static mpc_err_t *mpc_stack_merger_err(mpc_stack_t *s, int n) {
 #define MPC_CONTINUE(st, x) mpc_stack_set_state(stk, st); mpc_stack_pushp(stk, x); continue
 #define MPC_SUCCESS(x) mpc_stack_popp(stk, &p, &st); mpc_stack_pushr(stk, mpc_result_out(x), 1); continue
 #define MPC_FAILURE(x) mpc_stack_popp(stk, &p, &st); mpc_stack_pushr(stk, mpc_result_err(x), 0); continue
-#define MPC_PRIMATIVE(x, f) if (f) { MPC_SUCCESS(x); } else { MPC_FAILURE(mpc_err_fail(i->filename, i->state, "Incorrect Input")); }
+#define MPC_PRIMITIVE(x, f) if (f) { MPC_SUCCESS(x); } else { MPC_FAILURE(mpc_err_fail(i->filename, i->state, "Incorrect Input")); }
 
 int mpc_parse_input(mpc_input_t *i, mpc_parser_t *init, mpc_result_t *final) {
   
@@ -1001,15 +984,13 @@ int mpc_parse_input(mpc_input_t *i, mpc_parser_t *init, mpc_result_t *final) {
       
       /* Basic Parsers */
 
-      case MPC_TYPE_SOI:       MPC_PRIMATIVE(NULL, mpc_input_soi(i));
-      case MPC_TYPE_EOI:       MPC_PRIMATIVE(NULL, mpc_input_eoi(i));
-      case MPC_TYPE_ANY:       MPC_PRIMATIVE(s, mpc_input_any(i, &s));
-      case MPC_TYPE_SINGLE:    MPC_PRIMATIVE(s, mpc_input_char(i, p->data.single.x, &s));
-      case MPC_TYPE_RANGE:     MPC_PRIMATIVE(s, mpc_input_range(i, p->data.range.x, p->data.range.y, &s));
-      case MPC_TYPE_ONEOF:     MPC_PRIMATIVE(s, mpc_input_oneof(i, p->data.string.x, &s));
-      case MPC_TYPE_NONEOF:    MPC_PRIMATIVE(s, mpc_input_noneof(i, p->data.string.x, &s));
-      case MPC_TYPE_SATISFY:   MPC_PRIMATIVE(s, mpc_input_satisfy(i, p->data.satisfy.f, &s));
-      case MPC_TYPE_STRING:    MPC_PRIMATIVE(s, mpc_input_string(i, p->data.string.x, &s));
+      case MPC_TYPE_ANY:       MPC_PRIMITIVE(s, mpc_input_any(i, &s));
+      case MPC_TYPE_SINGLE:    MPC_PRIMITIVE(s, mpc_input_char(i, p->data.single.x, &s));
+      case MPC_TYPE_RANGE:     MPC_PRIMITIVE(s, mpc_input_range(i, p->data.range.x, p->data.range.y, &s));
+      case MPC_TYPE_ONEOF:     MPC_PRIMITIVE(s, mpc_input_oneof(i, p->data.string.x, &s));
+      case MPC_TYPE_NONEOF:    MPC_PRIMITIVE(s, mpc_input_noneof(i, p->data.string.x, &s));
+      case MPC_TYPE_SATISFY:   MPC_PRIMITIVE(s, mpc_input_satisfy(i, p->data.satisfy.f, &s));
+      case MPC_TYPE_STRING:    MPC_PRIMITIVE(s, mpc_input_string(i, p->data.string.x, &s));
       
       /* Other parsers */
       
@@ -1020,12 +1001,12 @@ int mpc_parse_input(mpc_input_t *i, mpc_parser_t *init, mpc_result_t *final) {
       case MPC_TYPE_LIFT_VAL:  MPC_SUCCESS(p->data.lift.x);
       case MPC_TYPE_STATE:     MPC_SUCCESS(mpc_state_copy(i->state));
       
-      case MPC_TYPE_BOUNDARY:
-	if (mpc_input_boundary(i)) {
-	  MPC_SUCCESS(NULL);
+      case MPC_TYPE_ANCHOR:
+        if (mpc_input_anchor(i, p->data.anchor.f)) {
+          MPC_SUCCESS(NULL);
         } else {
-	  MPC_FAILURE(mpc_err_new(i->filename, i->state, "boundary", mpc_input_peekc(i)));
-	}
+          MPC_FAILURE(mpc_err_new(i->filename, i->state, "anchor", mpc_input_peekc(i)));
+        }
       
       /* Application Parsers */
       
@@ -1167,7 +1148,7 @@ int mpc_parse_input(mpc_input_t *i, mpc_parser_t *init, mpc_result_t *final) {
       
       case MPC_TYPE_AND:
         
-        if (p->data.or.n == 0) { MPC_SUCCESS(p->data.and.f(0, NULL)); }
+        if (p->data.and.n == 0) { MPC_SUCCESS(p->data.and.f(0, NULL)); }
         
         if (st == 0) { mpc_input_mark(i); MPC_CONTINUE(st+1, p->data.and.xs[st]); }
         if (st <= p->data.and.n) {
@@ -1196,7 +1177,7 @@ int mpc_parse_input(mpc_input_t *i, mpc_parser_t *init, mpc_result_t *final) {
 #undef MPC_CONTINUE
 #undef MPC_SUCCESS
 #undef MPC_FAILURE
-#undef MPC_PRIMATIVE
+#undef MPC_PRIMITIVE
 
 int mpc_parse(const char *filename, const char *string, mpc_parser_t *p, mpc_result_t *r) {
   int x;
@@ -1450,15 +1431,16 @@ mpc_parser_t *mpc_lift(mpc_ctor_t lf) {
   return p;
 }
 
-mpc_parser_t *mpc_state(void) {
+mpc_parser_t *mpc_anchor(int(*f)(char,char)) {
   mpc_parser_t *p = mpc_undefined();
-  p->type = MPC_TYPE_STATE;
+  p->type = MPC_TYPE_ANCHOR;
+  p->data.anchor.f = f;
   return p;
 }
 
-mpc_parser_t *mpc_boundary(void) {
+mpc_parser_t *mpc_state(void) {
   mpc_parser_t *p = mpc_undefined();
-  p->type = MPC_TYPE_BOUNDARY;
+  p->type = MPC_TYPE_STATE;
   return p;
 }
 
@@ -1694,17 +1676,24 @@ mpc_parser_t *mpc_and(int n, mpc_fold_t f, ...) {
 ** Common Parsers
 */
 
-mpc_parser_t *mpc_eoi(void) {
-  mpc_parser_t *p = mpc_undefined();
-  p->type = MPC_TYPE_EOI;
-  return mpc_expect(p, "end of input");
+static int mpc_soi_anchor(char prev, char next) { (void) next; return (prev == '\0'); }
+static int mpc_eoi_anchor(char prev, char next) { (void) prev; return (next == '\0'); }
+
+mpc_parser_t *mpc_soi(void) { return mpc_expect(mpc_anchor(mpc_soi_anchor), "start of input"); }
+mpc_parser_t *mpc_eoi(void) { return mpc_expect(mpc_anchor(mpc_eoi_anchor), "end of input"); }
+
+static int mpc_boundary_anchor(char prev, char next) {
+  const char* word = "abcdefghijklmnopqrstuvwxyz"
+                     "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+                     "0123456789_";
+  if ( strchr(word, next) &&  prev == '\0') { return 1; }
+  if ( strchr(word, prev) &&  next == '\0') { return 1; }
+  if ( strchr(word, next) && !strchr(word, prev)) { return 1; }
+  if (!strchr(word, next) &&  strchr(word, prev)) { return 1; }
+  return 0;
 }
 
-mpc_parser_t *mpc_soi(void) {
-  mpc_parser_t *p = mpc_undefined();
-  p->type = MPC_TYPE_SOI;
-  return mpc_expect(p, "start of input");
-}
+mpc_parser_t *mpc_boundary(void) { return mpc_expect(mpc_anchor(mpc_boundary_anchor), "boundary"); }
 
 mpc_parser_t *mpc_whitespace(void) { return mpc_expect(mpc_oneof(" \f\n\r\t\v"), "whitespace"); }
 mpc_parser_t *mpc_whitespaces(void) { return mpc_expect(mpc_many(mpcf_strfold, mpc_whitespace()), "spaces"); }
@@ -1864,6 +1853,7 @@ mpc_parser_t *mpc_tok_squares(mpc_parser_t *a, mpc_dtor_t ad)  { return mpc_tok_
 */
 
 static mpc_val_t *mpcf_re_or(int n, mpc_val_t **xs) {
+  (void) n;
   if (xs[1] == NULL) { return xs[0]; }
   else { return mpc_or(2, xs[0], xs[1]); }
 }
@@ -1878,8 +1868,8 @@ static mpc_val_t *mpcf_re_and(int n, mpc_val_t **xs) {
 }
 
 static mpc_val_t *mpcf_re_repeat(int n, mpc_val_t **xs) {
-  
   int num;
+  (void) n;
   if (xs[1] == NULL) { return xs[0]; }
   if (strcmp(xs[1], "*") == 0) { free(xs[1]); return mpc_many(mpcf_strfold, xs[0]); }
   if (strcmp(xs[1], "+") == 0) { free(xs[1]); return mpc_many1(mpcf_strfold, xs[0]); }
@@ -1936,7 +1926,7 @@ static mpc_val_t *mpcf_re_escape(mpc_val_t *x) {
   return p;
 }
 
-static char *mpc_re_range_escape_char(char c) {
+static const char *mpc_re_range_escape_char(char c) {
   switch (c) {
     case '-': return "-";
     case 'a': return "\a";
@@ -1956,18 +1946,16 @@ static char *mpc_re_range_escape_char(char c) {
 static mpc_val_t *mpcf_re_range(mpc_val_t *x) {
   
   mpc_parser_t *out;
+  size_t i, j;
+  size_t start, end;
+  const char *tmp = NULL;
+  const char *s = x;
+  int comp = s[0] == '^' ? 1 : 0;
   char *range = calloc(1,1);
-  char *tmp = NULL;
-  char *s = x;
-  char start, end;
-  int i, j;
-  int comp = 0;
   
   if (s[0] == '\0') { free(x); return mpc_fail("Invalid Regex Range Expression"); } 
   if (s[0] == '^' && 
       s[1] == '\0') { free(x); return mpc_fail("Invalid Regex Range Expression"); }
-  
-  if (s[0] == '^') { comp = 1;}
   
   for (i = comp; i < strlen(s); i++){
     
@@ -2010,7 +1998,7 @@ static mpc_val_t *mpcf_re_range(mpc_val_t *x) {
   
   }
   
-  out = comp ? mpc_noneof(range) : mpc_oneof(range);
+  out = comp == 1 ? mpc_noneof(range) : mpc_oneof(range);
   
   free(x);
   free(range);
@@ -2031,8 +2019,7 @@ mpc_parser_t *mpc_re(const char *re) {
   Base   = mpc_new("base");
   Range  = mpc_new("range");
   
-  mpc_define(Regex, mpc_and(2, 
-    mpcf_re_or,
+  mpc_define(Regex, mpc_and(2, mpcf_re_or,
     Term, 
     mpc_maybe(mpc_and(2, mpcf_snd_free, mpc_char('|'), Regex, free)),
     (mpc_dtor_t)mpc_delete
@@ -2040,8 +2027,7 @@ mpc_parser_t *mpc_re(const char *re) {
   
   mpc_define(Term, mpc_many(mpcf_re_and, Factor));
   
-  mpc_define(Factor, mpc_and(2, 
-    mpcf_re_repeat,
+  mpc_define(Factor, mpc_and(2, mpcf_re_repeat,
     Base,
     mpc_or(5,
       mpc_char('*'), mpc_char('+'), mpc_char('?'),
@@ -2083,7 +2069,7 @@ mpc_parser_t *mpc_re(const char *re) {
 ** Common Fold Functions
 */
 
-void mpcf_dtor_null(mpc_val_t *x) { return; }
+void mpcf_dtor_null(mpc_val_t *x) { (void) x; return; }
 
 mpc_val_t *mpcf_ctor_null(void) { return NULL; }
 mpc_val_t *mpcf_ctor_str(void) { return calloc(1, 1); }
@@ -2111,36 +2097,57 @@ mpc_val_t *mpcf_oct(mpc_val_t *x) {
 }
 
 mpc_val_t *mpcf_float(mpc_val_t *x) {
-  float* y = malloc(sizeof(float));
+  float *y = malloc(sizeof(float));
   *y = strtod(x, NULL);
   free(x);
   return y;
 }
 
-static char mpc_escape_input_c[]  = {
+mpc_val_t *mpcf_strtriml(mpc_val_t *x) {
+  char *s = x;
+  while (isspace(*s)) {
+    memmove(s, s+1, strlen(s));
+  }
+  return s;
+}
+
+mpc_val_t *mpcf_strtrimr(mpc_val_t *x) {
+  char *s = x;
+  size_t l = strlen(s);
+  while (isspace(s[l-1])) {
+    s[l-1] = '\0'; l--;
+  }
+  return s;
+}
+
+mpc_val_t *mpcf_strtrim(mpc_val_t *x) {
+  return mpcf_strtriml(mpcf_strtrimr(x));
+}
+
+static const char mpc_escape_input_c[]  = {
   '\a', '\b', '\f', '\n', '\r',
   '\t', '\v', '\\', '\'', '\"', '\0'};
     
-static char *mpc_escape_output_c[] = {
+static const char *mpc_escape_output_c[] = {
   "\\a", "\\b", "\\f", "\\n", "\\r", "\\t", 
   "\\v", "\\\\", "\\'", "\\\"", "\\0", NULL};
 
-static char mpc_escape_input_raw_re[] = { '/' };
-static char *mpc_escape_output_raw_re[] = { "\\/", NULL };
+static const char mpc_escape_input_raw_re[] = { '/' };
+static const char *mpc_escape_output_raw_re[] = { "\\/", NULL };
 
-static char mpc_escape_input_raw_cstr[] = { '"' };
-static char *mpc_escape_output_raw_cstr[] = { "\\\"", NULL };
+static const char mpc_escape_input_raw_cstr[] = { '"' };
+static const char *mpc_escape_output_raw_cstr[] = { "\\\"", NULL };
 
-static char mpc_escape_input_raw_cchar[] = { '\'' };
-static char *mpc_escape_output_raw_cchar[] = { "\\'", NULL };
+static const char mpc_escape_input_raw_cchar[] = { '\'' };
+static const char *mpc_escape_output_raw_cchar[] = { "\\'", NULL };
 
-static mpc_val_t *mpcf_escape_new(mpc_val_t *x, char *input, char **output) {
+static mpc_val_t *mpcf_escape_new(mpc_val_t *x, const char *input, const char **output) {
   
   int i;
   int found;
+  char buff[2];
   char *s = x;
   char *y = calloc(1, 1);
-  char buff[2];
   
   while (*s) {
     
@@ -2170,14 +2177,14 @@ static mpc_val_t *mpcf_escape_new(mpc_val_t *x, char *input, char **output) {
   return y;
 }
 
-static mpc_val_t *mpcf_unescape_new(mpc_val_t *x, char *input, char **output) {
+static mpc_val_t *mpcf_unescape_new(mpc_val_t *x, const char *input, const char **output) {
   
   int i;
   int found = 0;
+  char buff[2];
   char *s = x;
   char *y = calloc(1, 1);
-  char buff[2];
-
+  
   while (*s) {
     
     i = 0;
@@ -2195,7 +2202,7 @@ static mpc_val_t *mpcf_unescape_new(mpc_val_t *x, char *input, char **output) {
       }
       i++;
     }
-      
+    
     if (!found) {
       y = realloc(y, strlen(y) + 2);
       buff[0] = *s; buff[1] = '\0';
@@ -2220,6 +2227,12 @@ mpc_val_t *mpcf_unescape(mpc_val_t *x) {
   mpc_val_t *y = mpcf_unescape_new(x, mpc_escape_input_c, mpc_escape_output_c);
   free(x);
   return y;
+}
+
+mpc_val_t *mpcf_escape_regex(mpc_val_t *x) {
+  mpc_val_t *y = mpcf_escape_new(x, mpc_escape_input_raw_re, mpc_escape_output_raw_re);
+  free(x);
+  return y;  
 }
 
 mpc_val_t *mpcf_unescape_regex(mpc_val_t *x) {
@@ -2252,10 +2265,10 @@ mpc_val_t *mpcf_unescape_char_raw(mpc_val_t *x) {
   return y;
 }
 
-mpc_val_t *mpcf_null(int n, mpc_val_t** xs) { return NULL; }
-mpc_val_t *mpcf_fst(int n, mpc_val_t **xs) { return xs[0]; }
-mpc_val_t *mpcf_snd(int n, mpc_val_t **xs) { return xs[1]; }
-mpc_val_t *mpcf_trd(int n, mpc_val_t **xs) { return xs[2]; }
+mpc_val_t *mpcf_null(int n, mpc_val_t** xs) { (void) n; (void) xs; return NULL; }
+mpc_val_t *mpcf_fst(int n, mpc_val_t **xs) { (void) n; return xs[0]; }
+mpc_val_t *mpcf_snd(int n, mpc_val_t **xs) { (void) n; return xs[1]; }
+mpc_val_t *mpcf_trd(int n, mpc_val_t **xs) { (void) n; return xs[2]; }
 
 static mpc_val_t *mpcf_nth_free(int n, mpc_val_t **xs, int x) {
   int i;
@@ -2270,8 +2283,9 @@ mpc_val_t *mpcf_snd_free(int n, mpc_val_t **xs) { return mpcf_nth_free(n, xs, 1)
 mpc_val_t *mpcf_trd_free(int n, mpc_val_t **xs) { return mpcf_nth_free(n, xs, 2); }
 
 mpc_val_t *mpcf_strfold(int n, mpc_val_t **xs) {
-  char *x = calloc(1, 1);
   int i;
+  char *x = calloc(1, 1);
+
   for (i = 0; i < n; i++) {
     x = realloc(x, strlen(x) + strlen(xs[i]) + 1);
     strcat(x, xs[i]);
@@ -2281,9 +2295,9 @@ mpc_val_t *mpcf_strfold(int n, mpc_val_t **xs) {
 }
 
 mpc_val_t *mpcf_maths(int n, mpc_val_t **xs) {
-  
   int **vs = (int**)xs;
-    
+  (void) n;
+  
   if (strcmp(xs[1], "*") == 0) { *vs[0] *= *vs[2]; }
   if (strcmp(xs[1], "/") == 0) { *vs[0] /= *vs[2]; }
   if (strcmp(xs[1], "%") == 0) { *vs[0] %= *vs[2]; }
@@ -2317,15 +2331,12 @@ static void mpc_print_unretained(mpc_parser_t *p, int force) {
   if (p->type == MPC_TYPE_PASS)   { printf("<:>"); }
   if (p->type == MPC_TYPE_FAIL)   { printf("<!>"); }
   if (p->type == MPC_TYPE_LIFT)   { printf("<#>"); }
-  if (p->type == MPC_TYPE_STATE)  { printf("<S#>"); }
-  if (p->type == MPC_TYPE_BOUNDARY)  { printf("<\\b>"); }
+  if (p->type == MPC_TYPE_STATE)  { printf("<S>"); }
+  if (p->type == MPC_TYPE_ANCHOR) { printf("<@>"); }
   if (p->type == MPC_TYPE_EXPECT) {
     printf("%s", p->data.expect.m);
     /*mpc_print_unretained(p->data.expect.x, 0);*/
   }
-  
-  if (p->type == MPC_TYPE_SOI) { printf("<^>"); }
-  if (p->type == MPC_TYPE_EOI) { printf("<$>"); }
   
   if (p->type == MPC_TYPE_ANY) { printf("<.>"); }
   if (p->type == MPC_TYPE_SATISFY) { printf("<f>"); }
@@ -2436,12 +2447,12 @@ void mpc_print(mpc_parser_t *p) {
 **
 */
 
-int mpc_test_fail(mpc_parser_t *p, const char *s, void *d,
-  int(*tester)(void*, void*),
+int mpc_test_fail(mpc_parser_t *p, const char *s, const void *d,
+  int(*tester)(const void*, const void*),
   mpc_dtor_t destructor,
-  void(*printer)(void*)) {
-
-  mpc_result_t r;  
+  void(*printer)(const void*)) {
+  mpc_result_t r;
+  (void) printer;
   if (mpc_parse("<test>", s, p, &r)) {
 
     if (tester(r.output, d)) {
@@ -2459,10 +2470,10 @@ int mpc_test_fail(mpc_parser_t *p, const char *s, void *d,
   
 }
 
-int mpc_test_pass(mpc_parser_t *p, const char *s, void *d,
-  int(*tester)(void*, void*), 
+int mpc_test_pass(mpc_parser_t *p, const char *s, const void *d,
+  int(*tester)(const void*, const void*), 
   mpc_dtor_t destructor, 
-  void(*printer)(void*)) {
+  void(*printer)(const void*)) {
 
   mpc_result_t r;  
   if (mpc_parse("<test>", s, p, &r)) {
@@ -2496,10 +2507,12 @@ void mpc_ast_delete(mpc_ast_t *a) {
   int i;
   
   if (a == NULL) { return; }
+  
   for (i = 0; i < a->children_num; i++) {
     mpc_ast_delete(a->children[i]);
   }
   
+  if (a->free) a->free(a->data);
   free(a->children);
   free(a->tag);
   free(a->contents);
@@ -2508,6 +2521,7 @@ void mpc_ast_delete(mpc_ast_t *a) {
 }
 
 static void mpc_ast_delete_no_children(mpc_ast_t *a) {
+  if (a->free) a->free(a->data);
   free(a->children);
   free(a->tag);
   free(a->contents);
@@ -2528,6 +2542,8 @@ mpc_ast_t *mpc_ast_new(const char *tag, const char *contents) {
   
   a->children_num = 0;
   a->children = NULL;
+  a->data = NULL;
+  a->free = NULL;
   return a;
   
 }
@@ -2606,25 +2622,38 @@ mpc_ast_t *mpc_ast_state(mpc_ast_t *a, mpc_state_t s) {
   return a;
 }
 
-static void mpc_ast_print_depth(mpc_ast_t *a, int d) {
+static void mpc_ast_print_depth(mpc_ast_t *a, int d, FILE *fp) {
   
   int i;
-  for (i = 0; i < d; i++) { printf("  "); }
+  
+  if (a == NULL) {
+    fprintf(fp, "NULL\n");
+    return;
+  }
+  
+  for (i = 0; i < d; i++) { fprintf(fp, "  "); }
   
   if (strlen(a->contents)) {
-    printf("%s:%i:%i '%s'\n", a->tag, a->state.row+1, a->state.col+1, a->contents);
+    fprintf(fp, "%s:%lu:%lu '%s'\n", a->tag, 
+      (long unsigned int)(a->state.row+1),
+      (long unsigned int)(a->state.col+1),
+      a->contents);
   } else {
-    printf("%s \n", a->tag);
+    fprintf(fp, "%s \n", a->tag);
   }
   
   for (i = 0; i < a->children_num; i++) {
-    mpc_ast_print_depth(a->children[i], d+1);
+    mpc_ast_print_depth(a->children[i], d+1, fp);
   }
   
 }
 
 void mpc_ast_print(mpc_ast_t *a) {
-  mpc_ast_print_depth(a, 0);
+  mpc_ast_print_depth(a, 0, stdout);
+}
+
+void mpc_ast_print_to(mpc_ast_t *a, FILE *fp) {
+  mpc_ast_print_depth(a, 0, fp);
 }
 
 mpc_val_t *mpcf_fold_ast(int n, mpc_val_t **xs) {
@@ -2676,6 +2705,7 @@ mpc_val_t *mpcf_state_ast(int n, mpc_val_t **xs) {
   mpc_ast_t *a = ((mpc_ast_t**)xs)[1];
   a = mpc_ast_state(a, *s);
   free(s);
+  (void) n;
   return a;
 }
 
@@ -2801,6 +2831,7 @@ typedef struct {
 } mpca_grammar_st_t;
 
 static mpc_val_t *mpcaf_grammar_or(int n, mpc_val_t **xs) {
+  (void) n;
   if (xs[1] == NULL) { return xs[0]; }
   else { return mpca_or(2, xs[0], xs[1]); }
 }
@@ -2814,9 +2845,9 @@ static mpc_val_t *mpcaf_grammar_and(int n, mpc_val_t **xs) {
   return p;
 }
 
-static mpc_val_t *mpcaf_grammar_repeat(int n, mpc_val_t **xs) {
-  
+static mpc_val_t *mpcaf_grammar_repeat(int n, mpc_val_t **xs) { 
   int num;
+  (void) n;
   if (xs[1] == NULL) { return xs[0]; }  
   if (strcmp(xs[1], "*") == 0) { free(xs[1]); return mpca_many(xs[0]); }
   if (strcmp(xs[1], "+") == 0) { free(xs[1]); return mpca_many1(xs[0]); }
@@ -2851,8 +2882,9 @@ static mpc_val_t *mpcaf_grammar_regex(mpc_val_t *x, void *s) {
   return mpca_state(mpca_tag(mpc_apply(p, mpcf_str_ast), "regex"));
 }
 
+/* Should this just use `isdigit` instead? */
 static int is_number(const char* s) {
-  int i;
+  size_t i;
   for (i = 0; i < strlen(s); i++) { if (!strchr("0123456789", s[i])) { return 0; } }
   return 1;
 }
@@ -2883,8 +2915,9 @@ static mpc_parser_t *mpca_grammar_find_parser(char *x, mpca_grammar_st_t *st) {
     
     /* Search Existing Parsers */
     for (i = 0; i < st->parsers_num; i++) {
-      mpc_parser_t *p = st->parsers[i];
-      if (p->name && strcmp(p->name, x) == 0) { return p; }
+      mpc_parser_t *q = st->parsers[i];
+      if (q == NULL) { return mpc_failf("Unknown Parser '%s'!", x); }
+      if (q->name && strcmp(q->name, x) == 0) { return q; }
     }
     
     /* Search New Parsers */
@@ -2896,10 +2929,7 @@ static mpc_parser_t *mpca_grammar_find_parser(char *x, mpca_grammar_st_t *st) {
       st->parsers = realloc(st->parsers, sizeof(mpc_parser_t*) * st->parsers_num);
       st->parsers[st->parsers_num-1] = p;
       
-      if (p == NULL) {
-        return mpc_failf("Unknown Parser '%s'!", x);
-      }
-      
+      if (p == NULL) { return mpc_failf("Unknown Parser '%s'!", x); }
       if (p->name && strcmp(p->name, x) == 0) { return p; }
       
     }
@@ -3004,12 +3034,11 @@ typedef struct {
 } mpca_stmt_t;
 
 static mpc_val_t *mpca_stmt_afold(int n, mpc_val_t **xs) {
-  
   mpca_stmt_t *stmt = malloc(sizeof(mpca_stmt_t));
   stmt->ident = ((char**)xs)[0];
   stmt->name = ((char**)xs)[1];
   stmt->grammar = ((mpc_parser_t**)xs)[3];
-  
+  (void) n;
   free(((char**)xs)[2]);
   free(((char**)xs)[4]);
   
@@ -3088,7 +3117,7 @@ static mpc_err_t *mpca_lang_st(mpc_input_t *i, mpca_grammar_st_t *st) {
   
   mpc_define(Stmt, mpc_and(5, mpca_stmt_afold,
     mpc_tok(mpc_ident()), mpc_maybe(mpc_tok(mpc_string_lit())), mpc_sym(":"), Grammar, mpc_sym(";"),
-    free, free, mpc_soft_delete
+    free, free, free, mpc_soft_delete
   ));
   
   mpc_define(Grammar, mpc_and(2, mpcaf_grammar_or,

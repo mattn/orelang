@@ -331,7 +331,7 @@ ore_value_array_from_klist(ore_context* ore, ore_array_t* p) {
   ore_value v = { ORE_TYPE_ARRAY };
   v.v.a = (ore_array*) malloc(sizeof(ore_array));
   if (!v.v.a) {
-    fprintf(stderr, "Failed to allocate memory\n");
+    fprintf(stderr, "failed to allocate memory\n");
     ore->err = ORE_ERROR_EXCEPTION;
     return ore_value_nil();
   }
@@ -345,7 +345,7 @@ ore_value_hash_from_khash(ore_context* ore, ore_hash_t* p) {
   ore_value v = { ORE_TYPE_HASH };
   v.v.h = (ore_hash*) malloc(sizeof(ore_hash));
   if (!v.v.h) {
-    fprintf(stderr, "Failed to allocate memory\n");
+    fprintf(stderr, "failed to allocate memory\n");
     ore->err = ORE_ERROR_EXCEPTION;
     return ore_value_nil();
   }
@@ -359,13 +359,13 @@ ore_define_class(ore_context* ore, mpc_ast_t* t) {
   ore_value v = { ORE_TYPE_CLASS };
   v.v.c = (ore_class*) malloc(sizeof(ore_class));
   if (!v.v.c) {
-    fprintf(stderr, "Failed to allocate memory\n");
+    fprintf(stderr, "failed to allocate memory\n");
     ore->err = ORE_ERROR_EXCEPTION;
     return ore_value_nil();
   }
   v.v.c->n = strdup(t->children[1]->contents);
   if (!v.v.c->n) {
-    fprintf(stderr, "Failed to allocate memory\n");
+    fprintf(stderr, "failed to allocate memory\n");
     ore->err = ORE_ERROR_EXCEPTION;
     return ore_value_nil();
   }
@@ -394,7 +394,7 @@ ore_bind_args(ore_context* ore, mpc_ast_t* f, ore_context* this, mpc_ast_t* t) {
   int num_in = t->children_num / 2 - 1, n = 0, i;
   ore_value* args = (ore_value*) malloc(sizeof(ore_value) * num_in);
   if (!args) {
-    fprintf(stderr, "Failed to allocate memory\n");
+    fprintf(stderr, "failed to allocate memory\n");
     ore->err = ORE_ERROR_EXCEPTION;
     return NULL;
   }
@@ -455,7 +455,7 @@ ore_object_new(ore_context* ore, mpc_ast_t* t) {
         ore_context* this = ore_new(ore);
         v.v.o = (ore_object*) malloc(sizeof(ore_object));
         if (!v.v.o) {
-          fprintf(stderr, "Failed to allocate memory\n");
+          fprintf(stderr, "failed to allocate memory\n");
           ore->err = ORE_ERROR_EXCEPTION;
           return ore_value_nil();
         }
@@ -476,7 +476,7 @@ ore_object_new(ore_context* ore, mpc_ast_t* t) {
       {
         v.v.o = (ore_object*) malloc(sizeof(ore_object));
         if (!v.v.o) {
-          fprintf(stderr, "Failed to allocate memory\n");
+          fprintf(stderr, "failed to allocate memory\n");
           ore->err = ORE_ERROR_EXCEPTION;
           return ore_value_nil();
         }
@@ -494,7 +494,7 @@ ore_object_new(ore_context* ore, mpc_ast_t* t) {
       }
       break;
     default:
-      fprintf(stderr, "Unknown class '%s'\n", t->children[1]->contents);
+      fprintf(stderr, "unknown class '%s'\n", t->children[1]->contents);
       ore->err = ORE_ERROR_EXCEPTION;
       return ore_value_nil();
   }
@@ -506,7 +506,7 @@ ore_value_env_from_context(ore_context* p) {
   ore_value v = { ORE_TYPE_ENV };
   v.v.e = (ore_env*) malloc(sizeof(ore_env));
   if (!v.v.e) {
-    fprintf(stderr, "Failed to allocate memory\n");
+    fprintf(stderr, "failed to allocate memory\n");
     p->err = ORE_ERROR_EXCEPTION;
     return ore_value_nil();
   }
@@ -520,7 +520,7 @@ ore_value_str_from_ptr(ore_context* ore, char* p, int l) {
   ore_value v = { ORE_TYPE_STRING };
   v.v.s = (ore_string*) malloc(sizeof(ore_string));
   if (!v.v.s) {
-    fprintf(stderr, "Failed to allocate memory\n");
+    fprintf(stderr, "failed to allocate memory\n");
     ore->err = ORE_ERROR_EXCEPTION;
     return ore_value_nil();
   }
@@ -535,7 +535,7 @@ ore_parse_str(ore_context* ore, const char* s) {
   ore_value v = { ORE_TYPE_STRING };
   char* t = strdup(s);
   if (!t) {
-    fprintf(stderr, "Failed to allocate memory\n");
+    fprintf(stderr, "failed to allocate memory\n");
     ore->err = ORE_ERROR_EXCEPTION;
   }
   char* p = t + 1;
@@ -561,7 +561,7 @@ ore_parse_str(ore_context* ore, const char* s) {
   size_t l = n - 1;
   v.v.s = (ore_string*) malloc(sizeof(ore_string));
   if (!v.v.s) {
-    fprintf(stderr, "Failed to allocate memory\n");
+    fprintf(stderr, "failed to allocate memory\n");
     ore->err = ORE_ERROR_EXCEPTION;
     return ore_value_nil();
   }
@@ -589,7 +589,7 @@ ore_cfunc_len(ore_context* ore, int num_in, ore_value* args, void* u) {
       }
       return v;
   }
-  fprintf(stderr, "Argument should be string or array\n");
+  fprintf(stderr, "argument should be string or array\n");
   ore->err = ORE_ERROR_EXCEPTION;
   return ore_value_nil();
 }
@@ -605,7 +605,7 @@ ore_cfunc_load(ore_context* ore, int num_in, ore_value* args, void* u) {
 
   mpc_result_t result;
   if (args[0].t != ORE_TYPE_STRING) {
-    fprintf(stderr, "Argument should be string\n");
+    fprintf(stderr, "argument should be string\n");
     ore->err = ORE_ERROR_EXCEPTION;
     return ore_value_nil();
   }
@@ -625,7 +625,7 @@ ore_cfunc_load(ore_context* ore, int num_in, ore_value* args, void* u) {
 static ore_value
 ore_cfunc_exit(ore_context* ore, int num_in, ore_value* args, void* u) {
   if (args[0].t != ORE_TYPE_INT) {
-    fprintf(stderr, "Argument should be int\n");
+    fprintf(stderr, "argument should be int\n");
     ore->err = ORE_ERROR_EXCEPTION;
     return ore_value_nil();
   }
@@ -801,7 +801,7 @@ ore_get(ore_context* ore, const char* name) {
     }
     p = p->parent;
   }
-  fprintf(stderr, "Unknown identifier '%s'\n", name);
+  fprintf(stderr, "unknown identifier '%s'\n", name);
   ore->err = ORE_ERROR_EXCEPTION;
   return ore_value_nil();
 }
@@ -852,7 +852,7 @@ orex_define_class(ore_context* ore, const char* name) {
   ore_value v = { ORE_TYPE_CCLASS };
   v.v.x = (ore_cclass*) malloc(sizeof(ore_cclass));
   if (!v.v.x) {
-    fprintf(stderr, "Failed to allocate memory\n");
+    fprintf(stderr, "failed to allocate memory\n");
     ore->err = ORE_ERROR_EXCEPTION;
     return ore_value_nil();
   }
@@ -889,7 +889,7 @@ ore_define_cfunc(ore_context* ore, const char* name, int num_in, ore_cfunc_t c, 
 ore_value
 ore_func_call(ore_context* ore, ore_value fn, int num_in, ore_value* args) {
   if (fn.v.f.num_in != -1 && num_in != fn.v.f.num_in) {
-    fprintf(stderr, "Number of arguments mismatch: %d for %d\n",
+    fprintf(stderr, "number of arguments mismatch: %d for %d\n",
       num_in, fn.v.f.num_in);
     ore->err = ORE_ERROR_EXCEPTION;
     return ore_value_nil();
@@ -945,7 +945,7 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
   if (ore->err != ORE_ERROR_NONE)
     return ore_value_nil();
   if (fn.t != ORE_TYPE_FUNC && fn.t != ORE_TYPE_CFUNC) {
-    fprintf(stderr, "Unknown function '%s'\n", t->children[0]->contents);
+    fprintf(stderr, "unknown function '%s'\n", t->children[0]->contents);
     ore->err = ORE_ERROR_EXCEPTION;
     return ore_value_nil();
   }
@@ -955,14 +955,14 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
       {
         int num_in = t->children_num / 2 - 1, n = 0, i;
         if (fn.v.f.num_in != -1 && num_in != fn.v.f.num_in) {
-          fprintf(stderr, "Number of arguments mismatch: %d for %d\n",
+          fprintf(stderr, "number of arguments mismatch: %d for %d\n",
             num_in, fn.v.f.num_in);
           ore->err = ORE_ERROR_EXCEPTION;
           return ore_value_nil();
         }
         ore_value* args = (ore_value*) malloc(sizeof(ore_value) * num_in);
         if (!args) {
-          fprintf(stderr, "Failed to allocate memory\n");
+          fprintf(stderr, "failed to allocate memory\n");
           ore->err = ORE_ERROR_EXCEPTION;
           return ore_value_nil();
         }
@@ -990,7 +990,7 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
       }
       break;
     default:
-      fprintf(stderr, "Invalid function call\n");
+      fprintf(stderr, "invalid function call\n");
       ore->err = ORE_ERROR_EXCEPTION;
       return ore_value_nil();
   }
@@ -1001,7 +1001,7 @@ static ore_value*
 ore_index_ref(ore_context* ore, ore_value v, ore_value e, int update) {
   if (v.t == ORE_TYPE_ARRAY) {
     if (e.t != ORE_TYPE_INT) {
-      fprintf(stderr, "Array index should be int\n");
+      fprintf(stderr, "array index should be int\n");
       ore->err = ORE_ERROR_EXCEPTION;
       return NULL;
     }
@@ -1018,13 +1018,13 @@ ore_index_ref(ore_context* ore, ore_value v, ore_value e, int update) {
       }
       n++;
     }
-    fprintf(stderr, "Out of bounds for array\n");
+    fprintf(stderr, "out of bounds for array\n");
     ore->err = ORE_ERROR_EXCEPTION;
     return NULL;
   }
   if (v.t == ORE_TYPE_HASH) {
     if (e.t != ORE_TYPE_STRING) {
-      fprintf(stderr, "Hash index should be string\n");
+      fprintf(stderr, "hash index should be string\n");
       ore->err = ORE_ERROR_EXCEPTION;
       return NULL;
     }
@@ -1065,7 +1065,7 @@ ore_index_ref(ore_context* ore, ore_value v, ore_value e, int update) {
     }
     return NULL;
   }
-  fprintf(stderr, "Invalid operation for %s\n", ore_kind(v));
+  fprintf(stderr, "invalid operation for %s\n", ore_kind(v));
   ore->err = ORE_ERROR_EXCEPTION;
   return NULL;
 }
@@ -1087,7 +1087,7 @@ ore_expr(ore_context* ore, mpc_ast_t* t) {
           else if (strcmp(op, "/") == 0) { v.v.i /= iv; }
           else if (strcmp(op, "%") == 0) { v.v.i %= iv; }
           else {
-            fprintf(stderr, "Unknown operator '%s' for int\n", op);
+            fprintf(stderr, "unknown operator '%s' for int\n", op);
             ore->err = ORE_ERROR_EXCEPTION;
             return ore_value_nil();
           }
@@ -1102,7 +1102,7 @@ ore_expr(ore_context* ore, mpc_ast_t* t) {
           else if (strcmp(op, "/") == 0) { v.v.d /= fv; }
           else if (strcmp(op, "%") == 0) { v.v.d = ((int) v.v.d % (int) fv); }
           else {
-            fprintf(stderr, "Unknown operator '%s' for float\n", op);
+            fprintf(stderr, "unknown operator '%s' for float\n", op);
             ore->err = ORE_ERROR_EXCEPTION;
             return ore_value_nil();
           }
@@ -1119,7 +1119,7 @@ ore_expr(ore_context* ore, mpc_ast_t* t) {
             else if (rhs.t == ORE_TYPE_STRING)
               p = rhs.v.s->p;
             else {
-              fprintf(stderr, "Unknown operator '%s' for string\n", op);
+              fprintf(stderr, "unknown operator '%s' for string\n", op);
               ore->err = ORE_ERROR_EXCEPTION;
               return ore_value_nil();
             }
@@ -1130,14 +1130,14 @@ ore_expr(ore_context* ore, mpc_ast_t* t) {
             strcat(s, p);
             v = ore_value_str_from_ptr(ore, s, l);
           } else {
-            fprintf(stderr, "Unknown operator '%s' for string\n", op);
+            fprintf(stderr, "unknown operator '%s' for string\n", op);
             ore->err = ORE_ERROR_EXCEPTION;
             return ore_value_nil();
           }
         }
         break;
       default:
-        fprintf(stderr, "Unknown operator '%s' for %s\n", op, ore_kind(v));
+        fprintf(stderr, "unknown operator '%s' for %s\n", op, ore_kind(v));
         ore->err = ORE_ERROR_EXCEPTION;
         return ore_value_nil();
     }
@@ -1199,7 +1199,7 @@ ore_cmp_lessmore(ore_context* ore, ore_value lhs, ore_value rhs) {
     case ORE_TYPE_FLOAT:
       return lhs.v.d - rhs.v.d;
   }
-  fprintf(stderr, "Invalid operator\n");
+  fprintf(stderr, "invalid operator\n");
   ore->err = ORE_ERROR_EXCEPTION;
   return 0;
 }
@@ -1218,8 +1218,10 @@ static ore_value
 ore_eval(ore_context* ore, mpc_ast_t* t) {
   if (!t) return ore_value_nil();
   int i, r;
-  //if (verbose)
-    //printf("tag: %s\n", t->tag);
+  if (t->data) {
+    return *(ore_value*)t->data;
+  }
+
   if (is_a(t, "eof") || is_a(t, "comment")) {
     return ore_value_nil();
   }
@@ -1233,10 +1235,16 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     return ore_value_nil();
   }
   if (is_a(t, "number")) {
-    return ore_parse_num(ore, t->contents);
+    ore_value v = ore_parse_num(ore, t->contents);
+    t->data = malloc(sizeof(ore_value));
+    memcpy(t->data, &v, sizeof(ore_value));
+    return v;
   }
   if (is_a(t, "string")) {
-    return ore_parse_str(ore, t->contents);
+    ore_value v = ore_parse_str(ore, t->contents);
+    t->data = malloc(sizeof(ore_value));
+    memcpy(t->data, &v, sizeof(ore_value));
+    return v;
   }
   if (is_a(t, "array")) {
     ore_array_t* a = kl_init(value);
@@ -1271,7 +1279,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     ore_context* this = v.t == ORE_TYPE_OBJECT ? (ore_context*) v.v.o->e : NULL;
     for (i = 2; i < t->children_num; i += 2) {
       if (v.t != ORE_TYPE_OBJECT) {
-        fprintf(stderr, "Invalid operation for %s\n", ore_kind(v));
+        fprintf(stderr, "invalid operation for %s\n", ore_kind(v));
         ore->err = ORE_ERROR_EXCEPTION;
         return ore_value_nil();
       }
@@ -1420,7 +1428,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     ore_value v;
     ore_value l = ore_eval(ore, t->children[4]);
     if (l.t != ORE_TYPE_ARRAY) {
-      fprintf(stderr, "Expected array for argument\n", t->tag);
+      fprintf(stderr, "expected array for argument\n", t->tag);
       ore->err = ORE_ERROR_EXCEPTION;
     }
     ore_array_t* a = (ore_array_t*) l.v.a->p;
@@ -1457,7 +1465,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   if (is_a(t, "char") && !strcmp(t->contents, ";")) {
     return ore_value_nil();
   }
-  fprintf(stderr, "Unknown operation '%s'\n", t->tag);
+  fprintf(stderr, "unknown operation '%s'\n", t->tag);
   ore->err = ORE_ERROR_EXCEPTION;
   return ore_value_nil();
 }
@@ -1466,7 +1474,7 @@ ore_context*
 ore_new(ore_context* parent) {
   ore_context* ore = (ore_context*) malloc(sizeof(ore_context));
   if (!ore) {
-    fprintf(stderr, "Failed to allocate memory\n");
+    fprintf(stderr, "failed to allocate memory\n");
     return NULL;
   }
   ore->env = kh_init(value);
@@ -1597,7 +1605,7 @@ main(int argc, char **argv) {
   for (i = f+1; i < argc; i++) {
     char* parg = strdup(argv[i]);
     if (!parg) {
-      fprintf(stderr, "Failed to allocate memory\n");
+      fprintf(stderr, "failed to allocate memory\n");
       exit(1);
     }
     *kl_pushp(value, args) = ore_value_str_from_ptr(ore, parg, -1);
