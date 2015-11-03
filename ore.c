@@ -158,6 +158,8 @@ ore_value_real_free(ore_value v) {
       free(v.v.o);
       v.v.o = NULL;
       break;
+    default:
+      break;
   }
   v.t = ORE_TYPE_NIL;
 }
@@ -195,6 +197,8 @@ ore_value_ref(ore_value v) {
       if (verbose)
         printf("ref object %d %p\n", v.v.o->ref, v.v.o);
       break;
+    default: 
+      break;
   }
 }
 
@@ -231,6 +235,8 @@ ore_value_unref(ore_value v) {
       if (--v.v.o->ref <= 0)
         ore_value_real_free(v);
       break;
+    default: 
+      break;
   }
 }
 
@@ -260,28 +266,6 @@ ore_value_false() {
 }
 
 static int
-ore_is_same_ref(ore_value lhs, ore_value rhs) {
-  switch (lhs.t) {
-    case ORE_TYPE_STRING:
-      if (rhs.t != ORE_TYPE_STRING) return 0;
-      return lhs.v.s->p == rhs.v.s->p;
-    case ORE_TYPE_ARRAY:
-      if (rhs.t != ORE_TYPE_ARRAY) return 0;
-      return lhs.v.a->p == rhs.v.a->p;
-    case ORE_TYPE_HASH:
-      if (rhs.t != ORE_TYPE_HASH) return 0;
-      return lhs.v.h->p == rhs.v.h->p;
-    case ORE_TYPE_ENV:
-      if (rhs.t != ORE_TYPE_ENV) return 0;
-      return lhs.v.e->p == rhs.v.e->p;
-    case ORE_TYPE_OBJECT:
-      if (rhs.t != ORE_TYPE_OBJECT) return 0;
-      return lhs.v.o == rhs.v.o;
-  }
-  return 0;
-}
-
-static int
 ore_is_true(ore_value v) {
   switch (v.t) {
     case ORE_TYPE_BOOL:
@@ -304,13 +288,10 @@ ore_is_true(ore_value v) {
       return 1; // TODO
     case ORE_TYPE_OBJECT:
       return 1; // TODO
+    default:
+      break;
   }
   return 0;
-}
-
-static int
-ore_is_nil(ore_value v) {
-  return v.t == ORE_TYPE_NIL;
 }
 
 static ore_value
@@ -378,7 +359,6 @@ ore_define_class(ore_context* ore, mpc_ast_t* t) {
 
 static mpc_ast_t*
 ore_find_statements(mpc_ast_t* t) {
-  mpc_ast_t* stmt = NULL;
   int i;
   if (is_a(t, "template")) return t;
   for (i = 0; i < t->children_num; i++) {
@@ -468,7 +448,7 @@ ore_object_new(ore_context* ore, mpc_ast_t* t) {
         ore_value initialize = ore_prop(this, "__initialize__");
         if (initialize.t == ORE_TYPE_FUNC) {
           ore_value* args = ore_bind_args(ore, initialize.v.f.x.o, this, t);
-          ore_func_call(this, initialize, 0, NULL);
+          ore_func_call(this, initialize, t->children_num, args);
         }
       }
       break;
@@ -588,6 +568,8 @@ ore_cfunc_len(ore_context* ore, int num_in, ore_value* args, void* u) {
         v.v.i = n;
       }
       return v;
+    default:
+      break;
   }
   fprintf(stderr, "argument should be string or array\n");
   ore->err = ORE_ERROR_EXCEPTION;
@@ -866,7 +848,6 @@ orex_define_class(ore_context* ore, const char* name) {
 
 void
 orex_define_method(ore_context* ore, ore_value clazz, const char* name, int num_in, ore_cfunc_t c, void* u) {
-  int r;
   ore_value v = { ORE_TYPE_CFUNC };
   v.v.f.ore = clazz.v.x->e;
   v.v.f.num_in = num_in;
@@ -877,7 +858,6 @@ orex_define_method(ore_context* ore, ore_value clazz, const char* name, int num_
 
 void
 ore_define_cfunc(ore_context* ore, const char* name, int num_in, ore_cfunc_t c, void* u) {
-  int r;
   ore_value v = { ORE_TYPE_CFUNC };
   v.v.f.ore = ore;
   v.v.f.num_in = num_in;
@@ -1186,6 +1166,8 @@ ore_cmp_eq(ore_context* ore, ore_value lhs, ore_value rhs) {
       if (lhs.t == rhs.t && lhs.v.e->p == rhs.v.e->p)
         return 1;
       return 0;
+    default:
+      break;
   }
   return 0;
 }
@@ -1198,6 +1180,8 @@ ore_cmp_lessmore(ore_context* ore, ore_value lhs, ore_value rhs) {
       return lhs.v.i - rhs.v.i;
     case ORE_TYPE_FLOAT:
       return lhs.v.d - rhs.v.d;
+    default:
+      break;
   }
   fprintf(stderr, "invalid operator\n");
   ore->err = ORE_ERROR_EXCEPTION;
@@ -1212,12 +1196,13 @@ ore_cmp(ore_context* ore, ore_value lhs, char* op, ore_value rhs) {
   if (!strcmp(op, "<=")) return ore_cmp_lessmore(ore, lhs, rhs) <= 0 ? ore_value_true() : ore_value_false();
   if (!strcmp(op, ">")) return ore_cmp_lessmore(ore, lhs, rhs) > 0 ? ore_value_true() : ore_value_false();
   if (!strcmp(op, "<=")) return ore_cmp_lessmore(ore, lhs, rhs) >= 0 ? ore_value_true() : ore_value_false();
+  return ore_value_false();
 }
 
 static ore_value
 ore_eval(ore_context* ore, mpc_ast_t* t) {
-  if (!t) return ore_value_nil();
   int i, r;
+  if (!t) return ore_value_nil();
   if (t->data) {
     return *(ore_value*)t->data;
   }
@@ -1265,7 +1250,6 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   }
   if (is_a(t, "item")) {
     ore_value v = ore_eval(ore, t->children[0]);
-    ore_value e = ore_value_nil();
     for (i = 2; i < t->children_num; i += 3) {
       ore_value key = ore_eval(ore, t->children[i]);
       ore_value* r = ore_index_ref(ore, v, key, 0);
@@ -1275,7 +1259,6 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   }
   if (is_a(t, "prop")) {
     ore_value v = ore_eval(ore, t->children[0]);
-    ore_value e = ore_value_nil();
     ore_context* this = v.t == ORE_TYPE_OBJECT ? (ore_context*) v.v.o->e : NULL;
     for (i = 2; i < t->children_num; i += 2) {
       if (v.t != ORE_TYPE_OBJECT) {
@@ -1389,7 +1372,6 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     return ore_value_nil();
   }
   if (is_a(t, "if")) {
-    ore_value v;
     int i;
     for (i = 0; i < t->children_num; i++) {
       int r = 0;
@@ -1407,10 +1389,9 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     return ore_value_nil();
   }
   if (is_a(t, "while")) {
-    ore_value v;
     ore_context* env = ore_new(ore);
     while (ore_is_true(ore_eval(env, t->children[2]))) {
-      v = ore_eval(env, ore_find_statements(t));
+      ore_eval(env, ore_find_statements(t));
       if (env->err != ORE_ERROR_NONE) {
         if (env->err == ORE_ERROR_CONTINUE) {
           env->err = ORE_ERROR_NONE;
@@ -1425,10 +1406,9 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     return ore_value_nil();
   }
   if (is_a(t, "for_in")) {
-    ore_value v;
     ore_value l = ore_eval(ore, t->children[4]);
     if (l.t != ORE_TYPE_ARRAY) {
-      fprintf(stderr, "expected array for argument\n", t->tag);
+      fprintf(stderr, "expected array for argument\n");
       ore->err = ORE_ERROR_EXCEPTION;
     }
     ore_array_t* a = (ore_array_t*) l.v.a->p;
@@ -1448,7 +1428,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     if (env->err == ORE_ERROR_RETURN)
       ore->err = ORE_ERROR_RETURN;
     ore_destroy(env);
-    return v;
+    return ore_value_nil();
   }
   if (is_a(t, "stmts") || is_a(t, "template") || t->tag[0] == '>') {
     ore_value v;
