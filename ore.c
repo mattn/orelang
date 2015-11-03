@@ -388,12 +388,14 @@ ore_bind_args(ore_context* ore, mpc_ast_t* f, ore_context* this, mpc_ast_t* t) {
       break;
     }
   }
-  for (; i < t->children_num; i += 2) {
-    if (is_a(t->children[i], "char") && t->children[i]->contents[0] == ')') {
-      i++;
-      break;
-    }
-    args[n++] = ore_eval(ore, t->children[i]);
+  for (; i < t->children_num; i++) {
+    if (is_a(t->children[i], "char")) {
+      if (t->children[i]->contents[0] == ')') {
+        i++;
+        break;
+      }
+    } else
+      args[n++] = ore_eval(ore, t->children[i]);
   }
 
   for (i = 0; i < f->children_num; i++) {
@@ -403,7 +405,7 @@ ore_bind_args(ore_context* ore, mpc_ast_t* f, ore_context* this, mpc_ast_t* t) {
     }
   }
   n = 0;
-  for (; i < f->children_num; i += 2) {
+  for (; i < f->children_num; i++) {
     if (is_a(f->children[i], "char") && f->children[i]->contents[0] == ')') {
       i++;
       break;
@@ -956,17 +958,17 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
     case ORE_TYPE_FUNC:
       {
         ore_context* env = ore_new((ore_context*) fn.v.f.ore);
-        ore_value* args = ore_bind_args(ore, fn.v.f.x.o, env, t);
         mpc_ast_t* stmts = ore_find_statements(fn.v.f.x.o);
         if (stmts) {
+          ore_value* args = ore_bind_args(ore, fn.v.f.x.o, env, t);
           v = ore_eval(env, stmts);
           if (env->err == ORE_ERROR_EXCEPTION)
             ore->err = env->err;
           char buf[64];
           sprintf(buf, "0x%p", env->env);
           ore_define(ore, buf, ore_value_env_from_context(env));
+          free(args);
         }
-        free(args);
       }
       break;
     default:
