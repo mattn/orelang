@@ -613,7 +613,7 @@ ore_cfunc_load(ore_context* ore, int num_in, ore_value* args, void* u) {
     mpc_err_print(result.error);
     mpc_err_delete(result.error);
     ore->err = ORE_ERROR_EXCEPTION;
-    return;
+    return ore_value_nil();
   }
   if (verbose)
     mpc_ast_print(result.output);
