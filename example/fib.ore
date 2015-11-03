@@ -1,3 +1,4 @@
+#!ore
 func fib(n) {
   if (n < 2) {
     return n;

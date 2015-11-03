@@ -1,3 +1,4 @@
+#!ore
 a = 1;
 a[0] = 23;
 println("Should not be passed");
