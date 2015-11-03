@@ -294,6 +294,14 @@ ore_is_true(ore_value v) {
   return 0;
 }
 
+static void
+ore_err_print(mpc_err_t* err) {
+  if (err->failure)
+    fprintf(stderr, "%s: error: %s\n", err->filename, err->failure);
+  else
+    fprintf(stderr, "%s:%ld:%ld: syntax error\n", err->filename, err->state.row+1, err->state.col);
+}
+
 static ore_value
 ore_parse_num(ore_context* ore, const char* s) {
   ore_value v = {0};
@@ -594,7 +602,7 @@ ore_cfunc_load(ore_context* ore, int num_in, ore_value* args, void* u) {
     return ore_value_nil();
   }
   if (!mpc_parse_contents(ore_value_str_ptr(args[0]), pctx->program, &result)) {
-    mpc_err_print(result.error);
+    ore_err_print(result.error);
     mpc_err_delete(result.error);
     ore->err = ORE_ERROR_EXCEPTION;
     return ore_value_nil();
@@ -1616,7 +1624,7 @@ main(int argc, char **argv) {
       if (l > 0 && buf[l-1] == '\n') { buf[l-1] = 0; l--; }
       if (l == 0) continue;
       if (!mpc_parse(argv[0], buf, Stmt, &result)) {
-        mpc_err_print(result.error);
+        ore_err_print(result.error);
         mpc_err_delete(result.error);
         continue;
       }
