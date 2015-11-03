@@ -5,7 +5,7 @@ SRCS = \
 
 OBJS = $(subst .c,.o,$(SRCS))
 
-CFLAGS = -g
+CFLAGS = -g -Wall -Werror
 LIBS = -lm
 TARGET = ore
 ifeq ($(OS),Windows_NT)
