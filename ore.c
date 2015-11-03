@@ -2,7 +2,7 @@
 
 #define STRUCTURE \
 "                                                                        \n" \
-"number     : /-?[0-9]+(\\.[0-9]*)?(e[0-9]+)?/ ;                         \n" \
+"number     : /-?(?:[0-9]+(?:\\.[0-9]*)?(e[0-9]+)?|0x[0-9a-fA-F]+)/ ;    \n" \
 "true       : \"true\" ;                                                 \n" \
 "false      : \"false\" ;                                                \n" \
 "nil        : \"nil\" ;                                                  \n" \
@@ -305,7 +305,10 @@ ore_err_print(mpc_err_t* err) {
 static ore_value
 ore_parse_num(ore_context* ore, const char* s) {
   ore_value v = {0};
-  if (!strchr(s, '.')) {
+  if (*s == '0' && *(s+1) == 'x') {
+    v.t = ORE_TYPE_INT;
+    v.v.i = strtol(s, NULL, 16);
+  } else if (!strchr(s, '.')) {
     v.t = ORE_TYPE_INT;
     v.v.i = atoi(s);
   } else {
