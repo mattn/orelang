@@ -1,0 +1,13 @@
+#!ore
+
+for (a in range(1, 100)) {
+  if ((a % 15) == 0) {
+    println("FizzBuzz");
+  } else if ((a % 3) == 0) {
+    println("Fizz");
+  } else if ((a % 5) == 0) {
+    println("Buzz");
+  } else {
+    println(a);
+  }
+}
