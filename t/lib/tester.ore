@@ -17,9 +17,9 @@ func is(expect, got, name) {
 
 func ok(expect, name) {
   if (expect) {
-    println("OK", name);
+    println("OK " + name);
   } else {
-    println("NG", name);
+    println("NG " + name);
 	exit(1);
   }
 }
