@@ -590,6 +590,36 @@ ore_cfunc_len(ore_context* ore, int num_in, ore_value* args, void* u) {
 }
 
 static ore_value
+ore_cfunc_range(ore_context* ore, int num_in, ore_value* args, void* u) {
+  if (args[0].t != ORE_TYPE_INT) {
+    fprintf(stderr, "argument should be int\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  ore_array_t* a = kl_init(value);
+  int from = 0;
+  int to = 0;
+  if (num_in == 2) {
+    if (args[1].t != ORE_TYPE_INT) {
+      fprintf(stderr, "argument should be int\n");
+      ore->err = ORE_ERROR_EXCEPTION;
+      return ore_value_nil();
+    }
+    from = args[0].v.i;
+    to = args[1].v.i;
+  } else {
+    to = args[0].v.i - 1;
+  }
+  int j;
+  for (j = from; j <= to; j++) {
+    ore_value v = { ORE_TYPE_INT };
+    v.v.i = j;
+    *kl_pushp(value, a) = v;
+  }
+  return ore_value_array_from_klist(ore, a);
+}
+
+static ore_value
 ore_cfunc_typeof(ore_context* ore, int num_in, ore_value* args, void* u) {
   return ore_value_str_from_ptr(ore, (char*) ore_kind(args[0]), -1);
 }
@@ -860,20 +890,22 @@ orex_define_class(ore_context* ore, const char* name) {
 }
 
 void
-orex_define_method(ore_context* ore, ore_value clazz, const char* name, int num_in, ore_cfunc_t c, void* u) {
+orex_define_method(ore_context* ore, ore_value clazz, const char* name, int num_in, int max_in, ore_cfunc_t c, void* u) {
   ore_value v = { ORE_TYPE_CFUNC };
   v.v.f.ore = clazz.v.x->e;
   v.v.f.num_in = num_in;
+  v.v.f.max_in = max_in;
   v.v.f.x.c = c;
   v.v.f.u = u;
   ore_define(clazz.v.x->e, name, v);
 }
 
 void
-ore_define_cfunc(ore_context* ore, const char* name, int num_in, ore_cfunc_t c, void* u) {
+ore_define_cfunc(ore_context* ore, const char* name, int num_in, int max_in, ore_cfunc_t c, void* u) {
   ore_value v = { ORE_TYPE_CFUNC };
   v.v.f.ore = ore;
   v.v.f.num_in = num_in;
+  v.v.f.max_in = max_in;
   v.v.f.x.c = c;
   v.v.f.u = u;
   ore_define(ore, name, v);
@@ -881,7 +913,7 @@ ore_define_cfunc(ore_context* ore, const char* name, int num_in, ore_cfunc_t c, 
 
 ore_value
 ore_func_call(ore_context* ore, ore_value fn, int num_in, ore_value* args) {
-  if (fn.v.f.num_in != -1 && num_in != fn.v.f.num_in) {
+  if (num_in < fn.v.f.num_in || (fn.v.f.max_in != -1 && num_in > fn.v.f.max_in)) {
     fprintf(stderr, "number of arguments mismatch: %d for %d\n",
       num_in, fn.v.f.num_in);
     ore->err = ORE_ERROR_EXCEPTION;
@@ -947,7 +979,7 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
     case ORE_TYPE_CFUNC:
       {
         int num_in = t->children_num / 2 - 1, n = 0, i;
-        if (fn.v.f.num_in != -1 && num_in != fn.v.f.num_in) {
+        if (num_in < fn.v.f.num_in || (fn.v.f.max_in != -1 && num_in > fn.v.f.max_in)) {
           fprintf(stderr, "number of arguments mismatch: %d for %d\n",
             num_in, fn.v.f.num_in);
           ore->err = ORE_ERROR_EXCEPTION;
@@ -1585,14 +1617,15 @@ main(int argc, char **argv) {
   pc.program = Program;
 
   ore_context* ore = ore_new(NULL);
-  ore_define_cfunc(ore, "dump_env", 0, ore_cfunc_dump_env, NULL);
-  ore_define_cfunc(ore, "to_string", 1, ore_cfunc_to_string, NULL);
-  ore_define_cfunc(ore, "print", -1, ore_cfunc_print, NULL);
-  ore_define_cfunc(ore, "println", -1, ore_cfunc_println, NULL);
-  ore_define_cfunc(ore, "len", 1, ore_cfunc_len, NULL);
-  ore_define_cfunc(ore, "typeof", 1, ore_cfunc_typeof, NULL);
-  ore_define_cfunc(ore, "load", 1, ore_cfunc_load, &pc);
-  ore_define_cfunc(ore, "exit", 1, ore_cfunc_exit, NULL);
+  ore_define_cfunc(ore, "dump_env", 0, 0, ore_cfunc_dump_env, NULL);
+  ore_define_cfunc(ore, "to_string", 1, 1, ore_cfunc_to_string, NULL);
+  ore_define_cfunc(ore, "print", 0, -1, ore_cfunc_print, NULL);
+  ore_define_cfunc(ore, "println", 0, -1, ore_cfunc_println, NULL);
+  ore_define_cfunc(ore, "len", 1, 1, ore_cfunc_len, NULL);
+  ore_define_cfunc(ore, "range", 1, 2, ore_cfunc_range, NULL);
+  ore_define_cfunc(ore, "typeof", 1, 1, ore_cfunc_typeof, NULL);
+  ore_define_cfunc(ore, "load", 1, 1, ore_cfunc_load, &pc);
+  ore_define_cfunc(ore, "exit", 1, 1, ore_cfunc_exit, NULL);
   ore_array_t* args = kl_init(value);
   int i;
   for (i = f+1; i < argc; i++) {

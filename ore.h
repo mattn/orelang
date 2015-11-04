@@ -47,6 +47,7 @@ typedef struct _ore_hash {
 typedef struct _ore_func {
   void* ore;
   int num_in;
+  int max_in;
   union {
     void* c;
     void* o;
@@ -120,12 +121,12 @@ ore_value ore_value_true();
 ore_value ore_value_false();
 
 void ore_define(ore_context*, const char*, ore_value);
-void ore_define_cfunc(ore_context*, const char*, int, ore_cfunc_t, void*);
+void ore_define_cfunc(ore_context*, const char*, int, int, ore_cfunc_t, void*);
 void ore_set(ore_context*, const char*, ore_value);
 ore_value ore_prop(ore_context*, const char*);
 ore_value ore_get(ore_context*, const char*);
 ore_value ore_func_call(ore_context*, ore_value, int, ore_value*);
 
 ore_value orex_define_class(ore_context*, const char*);
-void orex_define_method(ore_context*, ore_value, const char*, int, ore_cfunc_t, void*);
+void orex_define_method(ore_context*, ore_value, const char*, int, int, ore_cfunc_t, void*);
 #endif /* _ORE_H_ */
