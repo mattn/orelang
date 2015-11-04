@@ -299,7 +299,7 @@ ore_err_print(mpc_err_t* err) {
   if (err->failure)
     fprintf(stderr, "%s: error: %s\n", err->filename, err->failure);
   else
-    fprintf(stderr, "%s:%ld:%ld: syntax error\n", err->filename, err->state.row+1, err->state.col);
+    fprintf(stderr, "%s:%ld:%ld: syntax error\n", err->filename, err->state.row, err->state.col);
 }
 
 static ore_value
@@ -1606,7 +1606,7 @@ main(int argc, char **argv) {
       Return, Comment, Eof,
       Stmt, Stmts, Program);
   if (err != NULL) {
-    mpc_err_print(err);
+    ore_err_print(err);
     mpc_err_delete(err);
     goto leave;
   }
@@ -1640,7 +1640,7 @@ main(int argc, char **argv) {
 
   if (f > 0) {
     if (!mpc_parse_contents(argv[f], Program, &result)) {
-      mpc_err_print(result.error);
+      ore_err_print(result.error);
       mpc_err_delete(result.error);
     } else {
       if (verbose)
