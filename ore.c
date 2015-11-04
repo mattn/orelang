@@ -31,9 +31,9 @@
 "hash       : '{' <pair>? (',' <pair>)* '}' ;                            \n" \
 "ident      : /[a-zA-Z_][a-zA-Z0-9_]*/ ;                                 \n" \
 "                                                                        \n" \
-"term       : (<lambda> | <item> | <methodcall> | <cmp> | <prop>           " \
-"         | <anoncall> | <call>                                          \n" \
-"         | <factor> (('*' | '/' | '%') <factor>)*) ;                    \n" \
+"term       : (<lambda> | <item> | <methodcall> | <prop> | <cmp>           " \
+"         | <anoncall> | <call>                                            " \
+"         | <factor> (('*' | '/' | '%' | '+' | '-') <factor>)* ) ;       \n" \
 "lexp       : <term> (('+' | '-') <term>)* ;                             \n" \
 "let_v      : <ident> '=' <lexp> ';' ;                                   \n" \
 "let_a      : <item> '=' <lexp> ';' ;                                    \n" \
@@ -299,7 +299,7 @@ ore_err_print(mpc_err_t* err) {
   if (err->failure)
     fprintf(stderr, "%s: error: %s\n", err->filename, err->failure);
   else
-    fprintf(stderr, "%s:%ld:%ld: syntax error\n", err->filename, err->state.row, err->state.col);
+    fprintf(stderr, "%s:%ld:%ld: syntax error\n", err->filename, err->state.row+1, err->state.col+1);
 }
 
 static ore_value
