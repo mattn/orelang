@@ -2,7 +2,7 @@
 
 #define STRUCTURE \
 "                                                                        \n" \
-"number     : /-?(?:[0-9]+(?:\\.[0-9]*)?(e[0-9]+)?|0x[0-9a-fA-F]+)/ ;    \n" \
+"number     : /-?([0-9]+(\\.[0-9]*)?(e[0-9]+)?|0x[0-9a-fA-F]+)/ ;        \n" \
 "true       : \"true\" ;                                                 \n" \
 "false      : \"false\" ;                                                \n" \
 "nil        : \"nil\" ;                                                  \n" \
