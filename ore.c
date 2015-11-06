@@ -1267,7 +1267,8 @@ ore_cmp_eq(ore_context* ore, ore_value lhs, ore_value rhs) {
 static ore_value
 ore_match_regexp(ore_context* ore, ore_value lhs, ore_value rhs) {
   if (lhs.t == ORE_TYPE_STRING && rhs.t == ORE_TYPE_REGEXP) {
-    struct slre_cap caps[10] = {0};
+    struct slre_cap caps[10];
+    memset(caps, 0, sizeof(caps));
     if (slre_match(rhs.v.r->p, lhs.v.s->p, lhs.v.s->l, caps, 10, 0) > 0) {
       int i;
       ore_array_t* a = kl_init(value);
