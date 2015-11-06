@@ -1273,7 +1273,9 @@ ore_match_regexp(ore_context* ore, ore_value lhs, ore_value rhs) {
       ore_array_t* a = kl_init(value);
       for (i = 0; i < 10; i++) {
         if (caps[i].ptr == NULL) break;
-        *kl_pushp(value, a) = ore_value_str_from_ptr(ore, strdup(caps[i].ptr), caps[i].len);
+        char* p = calloc(1, caps[i].len + 1);
+        strncpy(p, caps[i].ptr, caps[i].len);
+        *kl_pushp(value, a) = ore_value_str_from_ptr(ore, p, caps[i].len);
       }
       return ore_value_array_from_klist(ore, a);
     }
