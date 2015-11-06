@@ -11,6 +11,7 @@
 "           | <string>                                                   \n" \
 "           | <array>                                                    \n" \
 "           | <hash>                                                     \n" \
+"           | <regexp>                                                   \n" \
 "           | <true>                                                     \n" \
 "           | <false>                                                    \n" \
 "           | <nil>                                                      \n" \
@@ -18,10 +19,11 @@
 "           | <new>                                                      \n" \
 "           | <ident> ;                                                  \n" \
 "string     : /\"(\\\\.|[^\"])*\"/ ;                                     \n" \
+"regexp     : /\\/(\\\\.|[^\\/])*\\// ;                                  \n" \
 "item       : <factor> ('[' <lexp> ']')+ ;                               \n" \
 "prop       : <factor> ('.' <ident>)+ ;                                  \n" \
 "cmp        : <factor>                                                     " \
-"         (\"!=\" | \"==\" | \"<=\" | \"<\" | \">=\" | \">\" )             " \
+"         (\"!=\" | \"==\" | \"<=\" | \"<\" | \">=\" | \">\" | \"=~\" )  " \
 "         <factor> ;                                                     \n" \
 "call       : <ident> '(' <lexp>? (',' <lexp>)* ')' ;                    \n" \
 "anoncall   : <factor> '(' <lexp>? (',' <lexp>)* ')' ;                   \n" \
@@ -107,6 +109,8 @@ ore_kind(ore_value v) {
       return "array";
     case ORE_TYPE_HASH:
       return "hash";
+    case ORE_TYPE_REGEXP:
+      return "regexp";
     case ORE_TYPE_ENV:
       return "env";
     case ORE_TYPE_CLASS:
@@ -142,6 +146,13 @@ ore_value_real_free(ore_value v) {
       kh_destroy(value, v.v.h->p);
       free(v.v.h);
       v.v.h = NULL;
+      break;
+    case ORE_TYPE_REGEXP:
+      if (verbose)
+        printf("free regexp %s\n", v.v.r->p);
+      free(v.v.r->p);
+      free(v.v.r);
+      v.v.r = NULL;
       break;
     case ORE_TYPE_ENV:
       if (verbose)
@@ -187,6 +198,11 @@ ore_value_ref(ore_value v) {
       if (verbose)
         printf("ref hash %d %p\n", v.v.h->ref, v.v.h->p);
       break;
+    case ORE_TYPE_REGEXP:
+      v.v.r->ref++;
+      if (verbose)
+        printf("ref regexp %d %p\n", v.v.r->ref, v.v.r->p);
+      break;
     case ORE_TYPE_ENV:
       v.v.e->ref++;
       if (verbose)
@@ -221,6 +237,12 @@ ore_value_unref(ore_value v) {
       if (verbose)
         printf("unref hash %d %p\n", v.v.h->ref, v.v.h->p);
       if (--v.v.h->ref <= 0)
+        ore_value_real_free(v);
+      break;
+    case ORE_TYPE_REGEXP:
+      if (verbose)
+        printf("unref regexp %d %p\n", v.v.r->ref, v.v.r->p);
+      if (--v.v.r->ref <= 0)
         ore_value_real_free(v);
       break;
     case ORE_TYPE_ENV:
@@ -277,9 +299,26 @@ ore_is_true(ore_value v) {
     case ORE_TYPE_STRING:
       return v.v.s->l > 0;
     case ORE_TYPE_ARRAY:
-      return 1; // TODO
+      {
+        int n = 0;
+        ore_array_t* a = (ore_array_t*) v.v.a->p;
+        ore_array_iter_t *k;
+        for (k = kl_begin(a); k != kl_end(a); k = kl_next(k)) n++;
+        return n > 0;
+      }
     case ORE_TYPE_HASH:
-      return 1; // TODO
+      {
+        ore_hash_t* h = (ore_hash_t*) v.v.h->p;
+        ore_hash_iter_t k;
+        int n = 0;
+        for (k = kh_begin(h); k != kh_end(h); k++) {
+          if (!kh_exist(h, k)) continue;
+          n++;
+        }
+        return n > 0;
+      }
+    case ORE_TYPE_REGEXP:
+      return v.v.r->l > 0;
     case ORE_TYPE_ENV:
       return 1; // TODO
     case ORE_TYPE_CLASS:
@@ -717,6 +756,9 @@ ore_value_to_str(ore_context* ore, ore_value v) {
         }
         kputc('}', &ks);
       }
+      break;
+    case ORE_TYPE_REGEXP:
+      kputs(v.v.r->p, &ks);
       break;
     case ORE_TYPE_FUNC:
       ksprintf(&ks, "<func-0x%p>", v.v.f.x.o);
@@ -1199,6 +1241,11 @@ ore_cmp_eq(ore_context* ore, ore_value lhs, ore_value rhs) {
       if (lhs.t == rhs.t && lhs.v.h->p == rhs.v.h->p)
         return 1;
       return 0;
+    case ORE_TYPE_REGEXP:
+      if (lhs.t == rhs.t && lhs.v.r->l == rhs.v.r->l &&
+          !memcmp(lhs.v.r->p, rhs.v.r->p, lhs.v.r->l))
+        return 1;
+      return 0;
     case ORE_TYPE_FUNC:
       if (lhs.t == rhs.t && lhs.v.f.x.o == rhs.v.f.x.o)
         return 1;
@@ -1215,6 +1262,23 @@ ore_cmp_eq(ore_context* ore, ore_value lhs, ore_value rhs) {
       break;
   }
   return 0;
+}
+
+static ore_value
+ore_match_regexp(ore_context* ore, ore_value lhs, ore_value rhs) {
+  if (lhs.t == ORE_TYPE_STRING && rhs.t == ORE_TYPE_REGEXP) {
+    struct slre_cap caps[10] = {0};
+    if (slre_match(rhs.v.r->p, lhs.v.s->p, lhs.v.s->l, caps, 10, 0) > 0) {
+      int i;
+      ore_array_t* a = kl_init(value);
+      for (i = 0; i < 10; i++) {
+        if (caps[i].ptr == NULL) break;
+        *kl_pushp(value, a) = ore_value_str_from_ptr(ore, (char*)caps[i].ptr, caps[i].len);
+      }
+      return ore_value_array_from_klist(ore, a);
+    }
+  }
+  return ore_value_nil();
 }
 
 static int
@@ -1241,6 +1305,7 @@ ore_cmp(ore_context* ore, ore_value lhs, char* op, ore_value rhs) {
   if (!strcmp(op, "<=")) return ore_cmp_lessmore(ore, lhs, rhs) <= 0 ? ore_value_true() : ore_value_false();
   if (!strcmp(op, ">")) return ore_cmp_lessmore(ore, lhs, rhs) > 0 ? ore_value_true() : ore_value_false();
   if (!strcmp(op, "<=")) return ore_cmp_lessmore(ore, lhs, rhs) >= 0 ? ore_value_true() : ore_value_false();
+  if (!strcmp(op, "=~")) return ore_match_regexp(ore, lhs, rhs);
   return ore_value_false();
 }
 
@@ -1292,6 +1357,13 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
       kh_value(h, k) = val;
     }
     return ore_value_hash_from_khash(ore, h);
+  }
+  if (is_a(t, "regexp")) {
+    ore_value v = ore_parse_str(ore, t->contents);
+    v.t = ORE_TYPE_REGEXP;
+    t->data = malloc(sizeof(ore_value));
+    memcpy(t->data, &v, sizeof(ore_value));
+    return v;
   }
   if (is_a(t, "item")) {
     ore_value v = ore_eval(ore, t->children[0]);
@@ -1562,6 +1634,7 @@ main(int argc, char **argv) {
   mpc_parser_t* Array      = mpc_new("array");
   mpc_parser_t* Pair       = mpc_new("pair");
   mpc_parser_t* Hash       = mpc_new("hash");
+  mpc_parser_t* Regexp     = mpc_new("regexp");
   mpc_parser_t* Ident      = mpc_new("ident");
   mpc_parser_t* Cmp        = mpc_new("cmp");
   mpc_parser_t* Term       = mpc_new("term");
@@ -1599,7 +1672,7 @@ main(int argc, char **argv) {
 
   mpc_err_t* err = mpca_lang(MPCA_LANG_DEFAULT, STRUCTURE,
       True, False, Nil,
-      Number, Factor, String, Array, Pair, Hash, Ident, Cmp,
+      Number, Factor, String, Array, Pair, Hash, Regexp, Ident, Cmp,
       If, IfStmt, ElseIf, Else, While, ForIn, Break, Continue,
       Term, Lexp, LetV, Value, Item, Prop, LetA, LetP, Var, Vararg,
       Lambda, Func, Class, Template, New, Call, Anoncall, MethodCall,
@@ -1621,6 +1694,7 @@ main(int argc, char **argv) {
   ore_define_cfunc(ore, "to_string", 1, 1, ore_cfunc_to_string, NULL);
   ore_define_cfunc(ore, "print", 0, -1, ore_cfunc_print, NULL);
   ore_define_cfunc(ore, "println", 0, -1, ore_cfunc_println, NULL);
+  ore_define_cfunc(ore, "puts", 0, -1, ore_cfunc_println, NULL);
   ore_define_cfunc(ore, "len", 1, 1, ore_cfunc_len, NULL);
   ore_define_cfunc(ore, "range", 1, 2, ore_cfunc_range, NULL);
   ore_define_cfunc(ore, "typeof", 1, 1, ore_cfunc_typeof, NULL);
@@ -1674,9 +1748,9 @@ main(int argc, char **argv) {
   ore_destroy(ore);
 
 leave:
-  mpc_cleanup(41,
+  mpc_cleanup(42,
       True, False, Nil,
-      Number, Factor, String, Array, Pair, Hash, Ident, Cmp,
+      Number, Factor, String, Array, Pair, Hash, Regexp, Ident, Cmp,
       If, IfStmt, ElseIf, Else, While, ForIn, Break, Continue,
       Term, Lexp, LetV, Value, Item, Prop, LetA, LetP, Var, Vararg,
       Lambda, Func, Class, Template, New, Call, Anoncall, MethodCall,

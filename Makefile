@@ -1,6 +1,7 @@
 SRCS = \
 	mpc.c \
 	kstring.c \
+	slre.c \
 	ore.c
 
 OBJS = $(subst .c,.o,$(SRCS))
@@ -17,7 +18,7 @@ endif
 
 all : $(TARGET)
 
-$(TARGET) : $(OBJS) mpc.h khash.h klist.h kstring.h ore.h
+$(TARGET) : $(OBJS) mpc.h khash.h klist.h kstring.h slre.h ore.h
 	gcc -o $@ $(OBJS) $(LIBS)
 
 .c.o :

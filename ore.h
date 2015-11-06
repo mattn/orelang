@@ -3,6 +3,7 @@
 #include "khash.h"
 #include "klist.h"
 #include "kstring.h"
+#include "slre.h"
 
 typedef enum {
   ORE_TYPE_NIL,
@@ -12,6 +13,7 @@ typedef enum {
   ORE_TYPE_STRING,
   ORE_TYPE_ARRAY,
   ORE_TYPE_HASH,
+  ORE_TYPE_REGEXP,
   ORE_TYPE_FUNC,
   ORE_TYPE_CFUNC,
   ORE_TYPE_ENV,
@@ -33,6 +35,12 @@ typedef struct _ore_string {
   int l;
   int ref;
 } ore_string;
+
+typedef struct _ore_regexp {
+  char* p;
+  int l;
+  int ref;
+} ore_regexp;
 
 typedef struct _ore_array {
   void* p;
@@ -86,6 +94,7 @@ typedef struct _ore_value {
     ore_string* s;
     ore_array* a;
     ore_hash* h;
+    ore_regexp* r;
     ore_func f;
     ore_env* e;
     ore_class* c;
