@@ -1628,59 +1628,98 @@ main(int argc, char **argv) {
     exit(1);
   }
 
-  mpc_parser_t* True       = mpc_new("true");
-  mpc_parser_t* False      = mpc_new("false");
-  mpc_parser_t* Nil        = mpc_new("nil");
-  mpc_parser_t* Number     = mpc_new("number");
-  mpc_parser_t* Factor     = mpc_new("factor");
-  mpc_parser_t* String     = mpc_new("string");
-  mpc_parser_t* Array      = mpc_new("array");
-  mpc_parser_t* Pair       = mpc_new("pair");
-  mpc_parser_t* Hash       = mpc_new("hash");
-  mpc_parser_t* Regexp     = mpc_new("regexp");
-  mpc_parser_t* Ident      = mpc_new("ident");
-  mpc_parser_t* Cmp        = mpc_new("cmp");
-  mpc_parser_t* Term       = mpc_new("term");
-  mpc_parser_t* Lexp       = mpc_new("lexp");
-  mpc_parser_t* LetV       = mpc_new("let_v");
-  mpc_parser_t* Value      = mpc_new("value");
-  mpc_parser_t* Item       = mpc_new("item");
-  mpc_parser_t* Prop       = mpc_new("prop");
-  mpc_parser_t* LetA       = mpc_new("let_a");
-  mpc_parser_t* LetP       = mpc_new("let_p");
-  mpc_parser_t* If         = mpc_new("if");
-  mpc_parser_t* IfStmt     = mpc_new("if_stmt");
-  mpc_parser_t* ElseIf     = mpc_new("else_if");
-  mpc_parser_t* Else       = mpc_new("else");
-  mpc_parser_t* While      = mpc_new("while");
-  mpc_parser_t* ForIn      = mpc_new("for_in");
-  mpc_parser_t* Break      = mpc_new("break");
-  mpc_parser_t* Continue   = mpc_new("continue");
-  mpc_parser_t* Var        = mpc_new("var");
-  mpc_parser_t* Vararg     = mpc_new("vararg");
-  mpc_parser_t* Lambda     = mpc_new("lambda");
-  mpc_parser_t* Func       = mpc_new("func");
-  mpc_parser_t* Template   = mpc_new("template");
-  mpc_parser_t* Class      = mpc_new("class");
-  mpc_parser_t* New        = mpc_new("new");
-  mpc_parser_t* Call       = mpc_new("call");
-  mpc_parser_t* Anoncall   = mpc_new("anoncall");
-  mpc_parser_t* MethodCall = mpc_new("methodcall");
-  mpc_parser_t* Return     = mpc_new("return");
-  mpc_parser_t* Comment    = mpc_new("comment");
-  mpc_parser_t* Eof        = mpc_new("eof");
-  mpc_parser_t* Stmt       = mpc_new("stmt");
-  mpc_parser_t* Stmts      = mpc_new("stmts");
-  mpc_parser_t* Program    = mpc_new("program");
+  mpc_parser_t* m_true       = mpc_new("true");
+  mpc_parser_t* m_false      = mpc_new("false");
+  mpc_parser_t* m_nil        = mpc_new("nil");
+  mpc_parser_t* m_number     = mpc_new("number");
+  mpc_parser_t* m_factor     = mpc_new("factor");
+  mpc_parser_t* m_string     = mpc_new("string");
+  mpc_parser_t* m_array      = mpc_new("array");
+  mpc_parser_t* m_pair       = mpc_new("pair");
+  mpc_parser_t* m_hash       = mpc_new("hash");
+  mpc_parser_t* m_regexp     = mpc_new("regexp");
+  mpc_parser_t* m_ident      = mpc_new("ident");
+  mpc_parser_t* m_cmp        = mpc_new("cmp");
+  mpc_parser_t* m_term       = mpc_new("term");
+  mpc_parser_t* m_lexp       = mpc_new("lexp");
+  mpc_parser_t* m_letv       = mpc_new("let_v");
+  mpc_parser_t* m_value      = mpc_new("value");
+  mpc_parser_t* m_item       = mpc_new("item");
+  mpc_parser_t* m_prop       = mpc_new("prop");
+  mpc_parser_t* m_leta       = mpc_new("let_a");
+  mpc_parser_t* m_letp       = mpc_new("let_p");
+  mpc_parser_t* m_if         = mpc_new("if");
+  mpc_parser_t* m_ifstmt     = mpc_new("if_stmt");
+  mpc_parser_t* m_elseif     = mpc_new("else_if");
+  mpc_parser_t* m_else       = mpc_new("else");
+  mpc_parser_t* m_while      = mpc_new("while");
+  mpc_parser_t* m_forin      = mpc_new("for_in");
+  mpc_parser_t* m_break      = mpc_new("break");
+  mpc_parser_t* m_continue   = mpc_new("continue");
+  mpc_parser_t* m_var        = mpc_new("var");
+  mpc_parser_t* m_vararg     = mpc_new("vararg");
+  mpc_parser_t* m_lambda     = mpc_new("lambda");
+  mpc_parser_t* m_func       = mpc_new("func");
+  mpc_parser_t* m_template   = mpc_new("template");
+  mpc_parser_t* m_class      = mpc_new("class");
+  mpc_parser_t* m_new        = mpc_new("new");
+  mpc_parser_t* m_call       = mpc_new("call");
+  mpc_parser_t* m_anoncall   = mpc_new("anoncall");
+  mpc_parser_t* m_methodcall = mpc_new("methodcall");
+  mpc_parser_t* m_return     = mpc_new("return");
+  mpc_parser_t* m_comment    = mpc_new("comment");
+  mpc_parser_t* m_eof        = mpc_new("eof");
+  mpc_parser_t* m_stmt       = mpc_new("stmt");
+  mpc_parser_t* m_stmts      = mpc_new("stmts");
+  mpc_parser_t* m_program    = mpc_new("program");
 
-  mpc_err_t* err = mpca_lang(MPCA_LANG_DEFAULT, STRUCTURE,
-      True, False, Nil,
-      Number, Factor, String, Array, Pair, Hash, Regexp, Ident, Cmp,
-      If, IfStmt, ElseIf, Else, While, ForIn, Break, Continue,
-      Term, Lexp, LetV, Value, Item, Prop, LetA, LetP, Var, Vararg,
-      Lambda, Func, Class, Template, New, Call, Anoncall, MethodCall,
-      Return, Comment, Eof,
-      Stmt, Stmts, Program);
+#define NODES \
+m_true,\
+m_false,\
+m_nil,\
+m_number,\
+m_factor,\
+m_string,\
+m_array,\
+m_pair,\
+m_hash,\
+m_regexp,\
+m_ident,\
+m_cmp,\
+m_term,\
+m_lexp,\
+m_letv,\
+m_value,\
+m_item,\
+m_prop,\
+m_leta,\
+m_letp,\
+m_if,\
+m_ifstmt,\
+m_elseif,\
+m_else,\
+m_while,\
+m_forin,\
+m_break,\
+m_continue,\
+m_var,\
+m_vararg,\
+m_lambda,\
+m_func,\
+m_template,\
+m_class,\
+m_new,\
+m_call,\
+m_anoncall,\
+m_methodcall,\
+m_return,\
+m_comment,\
+m_eof,\
+m_stmt,\
+m_stmts,\
+m_program
+
+  mpc_err_t* err = mpca_lang(MPCA_LANG_DEFAULT, STRUCTURE, NODES);
   if (err != NULL) {
     ore_err_print(err);
     mpc_err_delete(err);
@@ -1690,7 +1729,7 @@ main(int argc, char **argv) {
   mpc_result_t result;
   ore_parse_context pc;
   pc.root = mpc_ast_new(">", "");
-  pc.program = Program;
+  pc.program = m_program;
 
   ore_context* ore = ore_new(NULL);
   ore_define_cfunc(ore, "dump_env", 0, 0, ore_cfunc_dump_env, NULL);
@@ -1716,7 +1755,7 @@ main(int argc, char **argv) {
   ore_define(ore, "args", ore_value_array_from_klist(ore, args));
 
   if (f > 0) {
-    if (!mpc_parse_contents(argv[f], Program, &result)) {
+    if (!mpc_parse_contents(argv[f], m_program, &result)) {
       ore_err_print(result.error);
       mpc_err_delete(result.error);
     } else {
@@ -1736,7 +1775,7 @@ main(int argc, char **argv) {
       int l = strlen(buf);
       if (l > 0 && buf[l-1] == '\n') { buf[l-1] = 0; l--; }
       if (l == 0) continue;
-      if (!mpc_parse(argv[0], buf, Stmt, &result)) {
+      if (!mpc_parse(argv[0], buf, m_stmt, &result)) {
         ore_err_print(result.error);
         mpc_err_delete(result.error);
         continue;
@@ -1751,14 +1790,7 @@ main(int argc, char **argv) {
   ore_destroy(ore);
 
 leave:
-  mpc_cleanup(42,
-      True, False, Nil,
-      Number, Factor, String, Array, Pair, Hash, Regexp, Ident, Cmp,
-      If, IfStmt, ElseIf, Else, While, ForIn, Break, Continue,
-      Term, Lexp, LetV, Value, Item, Prop, LetA, LetP, Var, Vararg,
-      Lambda, Func, Class, Template, New, Call, Anoncall, MethodCall,
-      Return, Comment, Eof,
-      Stmt, Stmts, Program);
+  mpc_cleanup(44, NODES);
   return 0;
 }
 
