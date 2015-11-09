@@ -56,6 +56,7 @@
 "         '(' <ident>? (<vararg> | (',' <ident>)*) ')' '{' <stmts> '}' ; \n" \
 "template   : (<var> | <func>)* ;                                        \n" \
 "class      : \"class\" <ident> '{' <template> '}' ;                     \n" \
+"class_ext  : \"class\" <ident> \"extends\" <ident> '{' <template> '}' ; \n" \
 "new        : \"new\" <ident> '(' <lexp>? (',' <lexp>)* ')' ;            \n" \
 "                                                                        \n" \
 "break      : \"break\" ';' ;                                            \n" \
@@ -65,7 +66,7 @@
 "eof        : /$/ ;                                                      \n" \
 "stmt       : (<let_v> | <let_a> | <let_p> | <var> | <if>                  " \
 "         | <while> | <for_in>                                             " \
-"         | <func> | <class> | <return> | <break>                        \n" \
+"         | <func> | <class_ext> | <class> | <return> | <break>          \n" \
 "         | <continue> | <comment> | (<lexp> ';')) ;                     \n" \
 "program    : <stmts> <eof> ;                                            \n"
 
@@ -386,7 +387,7 @@ ore_value_hash_from_khash(ore_context* ore, ore_hash_t* p) {
 }
 
 static ore_value
-ore_define_class(ore_context* ore, mpc_ast_t* t) {
+ore_define_class(ore_context* ore, mpc_ast_t* t, const char* base) {
   ore_value v = { ORE_TYPE_CLASS };
   v.v.c = (ore_class*) malloc(sizeof(ore_class));
   if (!v.v.c) {
@@ -394,6 +395,7 @@ ore_define_class(ore_context* ore, mpc_ast_t* t) {
     ore->err = ORE_ERROR_EXCEPTION;
     return ore_value_nil();
   }
+  v.v.c->b = base;
   v.v.c->n = strdup(t->children[1]->contents);
   if (!v.v.c->n) {
     fprintf(stderr, "failed to allocate memory\n");
@@ -495,12 +497,15 @@ ore_object_new(ore_context* ore, mpc_ast_t* t) {
         v.v.o->c = clazz.v.c;
         v.v.o->e = this;
         v.v.o->ref = -1;
+        if (clazz.v.c->b != NULL) {
+          /* TODO make super */
+        }
         ore_eval(this, ore_find_statements(clazz.v.c->t));
         ore_define(this, "this", v);
         ore_value initialize = ore_prop(this, "__initialize__");
         if (initialize.t == ORE_TYPE_FUNC) {
           ore_value* args = ore_bind_args(ore, initialize.v.f.x.o, this, t);
-          ore_func_call(this, initialize, t->children_num, args);
+          ore_func_call(this, initialize, t->children_num / 2 - 1, args);
         }
       }
       break;
@@ -955,9 +960,11 @@ ore_define_cfunc(ore_context* ore, const char* name, int num_in, int max_in, ore
 
 ore_value
 ore_func_call(ore_context* ore, ore_value fn, int num_in, ore_value* args) {
-  if (num_in < fn.v.f.num_in || (fn.v.f.max_in != -1 && num_in > fn.v.f.max_in)) {
+  if ((fn.v.f.num_in != -1 && num_in < fn.v.f.num_in) || (fn.v.f.max_in != -1 && num_in > fn.v.f.max_in)) {
     fprintf(stderr, "number of arguments mismatch: %d for %d\n",
       num_in, fn.v.f.num_in);
+    fprintf(stderr, "number of arguments mismatch: %d for %d\n",
+      num_in, fn.v.f.max_in);
     ore->err = ORE_ERROR_EXCEPTION;
     return ore_value_nil();
   }
@@ -1004,15 +1011,21 @@ ore_func_call(ore_context* ore, ore_value fn, int num_in, ore_value* args) {
 static ore_value
 ore_call(ore_context* ore, mpc_ast_t *t) {
   ore_value fn;
+  const char* pfn = NULL;
   if (is_a(t->children[0], "ident")) {
-    fn = ore_get(ore, t->children[0]->contents);
+    pfn = t->children[0]->contents;
+    fn = ore_get(ore, pfn);
+  } else if (is_a(t->children[0], "prop")) {
+    pfn = t->children[0]->children[2]->contents;
+    fn = ore_get(ore, pfn);
   } else {
-    fn = ore_eval(ore, t->children[0]);
+    pfn = "<anonymous>";
+    fn = ore_get(ore, pfn);
   }
   if (ore->err != ORE_ERROR_NONE)
     return ore_value_nil();
   if (fn.t != ORE_TYPE_FUNC && fn.t != ORE_TYPE_CFUNC) {
-    fprintf(stderr, "unknown function '%s'\n", t->children[0]->contents);
+    fprintf(stderr, "unknown function '%s'\n", pfn);
     ore->err = ORE_ERROR_EXCEPTION;
     return ore_value_nil();
   }
@@ -1451,6 +1464,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     ore_value v = { ORE_TYPE_FUNC };
     v.v.f.ore = ore;
     v.v.f.num_in = -1;
+    v.v.f.max_in = -1;
     v.v.f.x.o = t;
     ore_define(ore, t->children[1]->contents, v);
     return v;
@@ -1459,11 +1473,16 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     ore_value v = { ORE_TYPE_FUNC };
     v.v.f.ore = ore;
     v.v.f.num_in = -1;
+    v.v.f.max_in = -1;
     v.v.f.x.o = t;
     return v;
   }
+  if (is_a(t, "class_ext")) {
+    puts("foo");
+    return ore_define_class(ore, t, t->children[1]->contents);
+  }
   if (is_a(t, "class")) {
-    return ore_define_class(ore, t);
+    return ore_define_class(ore, t, NULL);
   }
   if (is_a(t, "new")) {
     return ore_object_new(ore, t);
@@ -1662,6 +1681,7 @@ main(int argc, char **argv) {
   mpc_parser_t* m_func       = mpc_new("func");
   mpc_parser_t* m_template   = mpc_new("template");
   mpc_parser_t* m_class      = mpc_new("class");
+  mpc_parser_t* m_classext   = mpc_new("class_ext");
   mpc_parser_t* m_new        = mpc_new("new");
   mpc_parser_t* m_call       = mpc_new("call");
   mpc_parser_t* m_anoncall   = mpc_new("anoncall");
@@ -1708,6 +1728,7 @@ m_lambda,\
 m_func,\
 m_template,\
 m_class,\
+m_classext,\
 m_new,\
 m_call,\
 m_anoncall,\

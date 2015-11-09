@@ -71,6 +71,7 @@ typedef struct _ore_env {
 typedef struct _ore_class {
   const char* n;
   void* t;
+  const char* b;
 } ore_class;
 
 typedef struct _ore_cclass {
