@@ -582,6 +582,25 @@ ore_value_str_from_ptr(ore_context* ore, char* p, int l) {
   return v;
 }
 
+#if 0
+static ore_value
+ore_value_str_from_ptr_dup(ore_context* ore, char* p, int l) {
+  ore_value v = { ORE_TYPE_STRING };
+  v.v.s = (ore_string*) malloc(sizeof(ore_string));
+  if (!v.v.s) {
+    fprintf(stderr, "failed to allocate memory\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  v.v.s->ref = 0;
+  v.v.s->l = l < 0 ? strlen(p) : l;
+  char* t = malloc(v.v.s->l + 1);
+  strcpy(t, p);
+  v.v.s->p = t;
+  return v;
+}
+#endif
+
 static ore_value
 ore_parse_str(ore_context* ore, const char* s) {
   ore_value v = { ORE_TYPE_STRING };
@@ -704,6 +723,26 @@ ore_cfunc_load(ore_context* ore, int num_in, ore_value* args, void* u) {
   ore_eval(ore, result.output);
   mpc_ast_add_child(pctx->root, result.output);
   return ore_value_nil();
+}
+
+static ore_value
+ore_cfunc_environ(ore_context* ore, int num_in, ore_value* args, void* u) {
+  int i;
+  ore_hash_t* h = kh_init(value);
+  for (i = 0; environ[i]; i++) {
+    const char* p = environ[i];
+    if (p == NULL) break;
+    const char* t = strchr(p, '=');
+    if (t) {
+      int r;
+      char* n = calloc(1, t-p+1);
+      memcpy(n, p, t-p);
+      ore_value val = ore_value_str_from_ptr(ore, (char*) t+1, -1);
+      khint_t k = kh_put(value, h, n, &r);
+      kh_value(h, k) = val;
+    }
+  }
+  return ore_value_hash_from_khash(ore, h);
 }
 
 static ore_value
@@ -1820,6 +1859,7 @@ m_program
   ore_define_cfunc(ore, "range", 1, 2, ore_cfunc_range, NULL);
   ore_define_cfunc(ore, "typeof", 1, 1, ore_cfunc_typeof, NULL);
   ore_define_cfunc(ore, "load", 1, 1, ore_cfunc_load, &pc);
+  ore_define_cfunc(ore, "environ", 0, 0, ore_cfunc_environ, &pc);
   ore_define_cfunc(ore, "exit", 1, 1, ore_cfunc_exit, NULL);
   ore_array_t* args = kl_init(value);
   int i;
