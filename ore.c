@@ -610,6 +610,7 @@ ore_parse_str(ore_context* ore, const char* s) {
   if (!t) {
     fprintf(stderr, "failed to allocate memory\n");
     ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
   }
   char* p = t + 1;
   char* ps = p;
@@ -642,6 +643,7 @@ ore_parse_str(ore_context* ore, const char* s) {
   v.v.s->l = l;
   v.v.s->p = calloc(1, l + 1);
   strncpy(v.v.s->p, t + 1, l);
+  free(t);
   return v;
 }
 
@@ -1386,7 +1388,7 @@ ore_match_regexp(ore_context* ore, ore_value lhs, ore_value rhs) {
       for (i = 0; i < 10; i++) {
         if (caps[i].ptr == NULL) break;
         char* p = calloc(1, caps[i].len + 1);
-        strncpy(p, caps[i].ptr, caps[i].len);
+        memcpy(p, caps[i].ptr, caps[i].len);
         *kl_pushp(value, a) = ore_value_str_from_ptr(ore, p, caps[i].len);
       }
       return ore_value_array_from_klist(ore, a);
