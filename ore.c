@@ -478,35 +478,46 @@ ore_bind_args(ore_context* ore, mpc_ast_t* f, ore_context* this, mpc_ast_t* t) {
 }
 
 static ore_value
-ore_object_new(ore_context* ore, mpc_ast_t* t) {
+ore_find_global(ore_context* ore, const char* name) {
   ore_context* g = ore;
   while (g->parent) g = g->parent;
-  ore_value clazz = ore_get(g, t->children[1]->contents);
+  return ore_get(g, name);
+}
+
+static ore_value
+ore_class_new(ore_context* ore, ore_value clazz) {
+  ore_value v = { ORE_TYPE_OBJECT };
+  ore_context* this = ore_new(ore);
+  v.v.o = (ore_object*) malloc(sizeof(ore_object));
+  if (!v.v.o) {
+    fprintf(stderr, "failed to allocate memory\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  if (clazz.v.c->b != NULL) {
+    ore_value bc = ore_find_global(ore, clazz.v.c->b);
+    ore_define(this, "super", ore_class_new(this, bc));
+  }
+  v.v.o->t = clazz.t;
+  v.v.o->c = clazz.v.c;
+  v.v.o->e = this;
+  v.v.o->ref = -1;
+  ore_eval(this, ore_find_statements(clazz.v.c->t));
+  ore_define(this, "this", v);
+  return v;
+}
+
+static ore_value
+ore_object_new(ore_context* ore, mpc_ast_t* t) {
+  ore_value clazz = ore_find_global(ore, t->children[1]->contents);
   ore_value v = { ORE_TYPE_OBJECT };
   switch (clazz.t) {
     case ORE_TYPE_CLASS:
-      {
-        ore_context* this = ore_new(ore);
-        v.v.o = (ore_object*) malloc(sizeof(ore_object));
-        if (!v.v.o) {
-          fprintf(stderr, "failed to allocate memory\n");
-          ore->err = ORE_ERROR_EXCEPTION;
-          return ore_value_nil();
-        }
-        v.v.o->t = clazz.t;
-        v.v.o->c = clazz.v.c;
-        v.v.o->e = this;
-        v.v.o->ref = -1;
-        if (clazz.v.c->b != NULL) {
-          /* TODO make super */
-        }
-        ore_eval(this, ore_find_statements(clazz.v.c->t));
-        ore_define(this, "this", v);
-        ore_value initialize = ore_prop(this, "__initialize__");
-        if (initialize.t == ORE_TYPE_FUNC) {
-          ore_value* args = ore_bind_args(ore, initialize.v.f.x.o, this, t);
-          ore_func_call(this, initialize, t->children_num / 2 - 1, args);
-        }
+      v = ore_class_new(ore, clazz);
+      ore_value initialize = ore_prop(v.v.o->e, "__initialize__");
+      if (initialize.t == ORE_TYPE_FUNC) {
+        ore_value* args = ore_bind_args(ore, initialize.v.f.x.o, v.v.o->e, t);
+        ore_func_call(v.v.o->e, initialize, t->children_num / 2 - 1, args);
       }
       break;
     case ORE_TYPE_CCLASS:
@@ -1016,11 +1027,21 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
     pfn = t->children[0]->contents;
     fn = ore_get(ore, pfn);
   } else if (is_a(t->children[0], "prop")) {
+    // FIXME
     pfn = t->children[0]->children[2]->contents;
-    fn = ore_get(ore, pfn);
+    while (ore != NULL) {
+      fn = ore_eval(ore, t->children[0]);
+      if (fn.t == ORE_TYPE_FUNC || fn.t == ORE_TYPE_CFUNC) {
+        break;
+      }
+      ore_value super = ore_prop(ore, "super");
+      if (super.t == ORE_TYPE_NIL)
+        break;
+      ore = super.v.o->e;
+    }
   } else {
     pfn = "<anonymous>";
-    fn = ore_get(ore, pfn);
+    fn = ore_eval(ore, t->children[0]);
   }
   if (ore->err != ORE_ERROR_NONE)
     return ore_value_nil();
@@ -1478,8 +1499,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     return v;
   }
   if (is_a(t, "class_ext")) {
-    puts("foo");
-    return ore_define_class(ore, t, t->children[1]->contents);
+    return ore_define_class(ore, t, t->children[3]->contents);
   }
   if (is_a(t, "class")) {
     return ore_define_class(ore, t, NULL);
