@@ -741,7 +741,7 @@ ore_cfunc_environ(ore_context* ore, int num_in, ore_value* args, void* u) {
       if (p == NULL) break;
       const char* t = strchr(p, '=');
       if (t) {
-        int r;
+        int r = 0;
         char* n = calloc(1, t-p+1);
         memcpy(n, p, t-p);
         ore_value val = ore_value_str_from_ptr(ore, (char*) t+1, -1);
@@ -946,7 +946,7 @@ ore_get(ore_context* ore, const char* name) {
 void
 ore_set(ore_context* ore, const char* name, ore_value v) {
   khint_t k;
-  int r;
+  int r = 0;
   ore_value old = ore_value_nil();
   while (ore) {
     k = kh_get(value, ore->env, name);
@@ -973,7 +973,7 @@ ore_set(ore_context* ore, const char* name, ore_value v) {
 
 void
 ore_define(ore_context* ore, const char* name, ore_value v) {
-  int r;
+  int r = 0;
   ore_value old = ore_value_nil();
   khint_t k = kh_get(value, ore->env, name);
   if (k != kh_end(ore->env))
@@ -1189,7 +1189,7 @@ ore_index_ref(ore_context* ore, ore_value v, ore_value e, int update) {
     }
     ore_hash_t* h = (ore_hash_t*) v.v.h->p;
     if (update) {
-      int r;
+      int r = 0;
       khint_t k = kh_get(value, h, e.v.s->p);
       if (k != kh_end(ore->env)) {
         ore_value old = kh_value(ore->env, k);
@@ -1208,7 +1208,7 @@ ore_index_ref(ore_context* ore, ore_value v, ore_value e, int update) {
   if (v.t == ORE_TYPE_OBJECT) {
     ore_context* this = (ore_context*) v.v.o->e;
     if (update) {
-      int r;
+      int r = 0;
       khint_t k = kh_get(value, this->env, e.v.s->p);
       if (k != kh_end(ore->env)) {
         ore_value old = kh_value(ore->env, k);
@@ -1573,6 +1573,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     v.v.f.num_in = -1;
     v.v.f.max_in = -1;
     v.v.f.x.o = t;
+    v.v.f.u = NULL;
     ore_define(ore, t->children[1]->contents, v);
     return v;
   }
@@ -1582,6 +1583,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     v.v.f.num_in = -1;
     v.v.f.max_in = -1;
     v.v.f.x.o = t;
+    v.v.f.u = NULL;
     return v;
   }
   if (is_a(t, "class_ext")) {
@@ -1717,7 +1719,7 @@ ore_new(ore_context* parent) {
 
 void
 ore_destroy(ore_context* ore) {
-  ore_value v;
+  ore_value v = { ORE_TYPE_NIL };
   kh_foreach_value(ore->env, v, unref_code(v));
   kh_destroy(value, ore->env);
   free(ore);
