@@ -23,7 +23,7 @@
 "item       : <factor> ('[' <lexp> ']')+ ;                               \n" \
 "prop       : <factor> ('.' <ident>)+ ;                                  \n" \
 "cmp        : <factor>                                                     " \
-"         (\"!=\" | \"==\" | \"<=\" | \"<\" | \">=\" | \">\" | \"=~\" )  " \
+"         (\"!=\" | \"==\" | \"<=\" | \"<\" | \">=\" | \">\" | \"=~\")     " \
 "         <factor> ;                                                     \n" \
 "call       : <ident> '(' <lexp>? (',' <lexp>)* ')' ;                    \n" \
 "anoncall   : <factor> '(' <lexp>? (',' <lexp>)* ')' ;                   \n" \
@@ -37,9 +37,10 @@
 "         | <anoncall> | <call>                                            " \
 "         | <factor> (('*' | '/' | '%' | '+' | '-') <factor>)* ) ;       \n" \
 "lexp       : <term> (('+' | '-') <term>)* ;                             \n" \
-"let_v      : <ident> '=' <lexp> ';' ;                                   \n" \
-"let_a      : <item> '=' <lexp> ';' ;                                    \n" \
-"let_p      : <prop> '=' <lexp> ';' ;                                    \n" \
+"let_o      : (\"=\" | \"+=\" | \"-=\" | \"*=\" | \"/=\") ;              \n" \
+"let_v      : <ident> <let_o> <lexp> ';' ;                               \n" \
+"let_a      : <item> <let_o> <lexp> ';' ;                                \n" \
+"let_p      : <prop> <let_o> <lexp> ';' ;                                \n" \
 "else_if    : \"else\" \"if\" '(' <lexp> ')' '{' <stmts> '}' ;           \n" \
 "else       : \"else\" '{' <stmts> '}' ;                                 \n" \
 "if_stmt    : \"if\" '(' <lexp> ')' '{' <stmts> '}' ;                    \n" \
@@ -1179,78 +1180,84 @@ ore_index_ref(ore_context* ore, ore_value v, ore_value e, int update) {
 }
 
 static ore_value
-ore_expr(ore_context* ore, mpc_ast_t* t) {
-  int i;
-  ore_value v = ore_eval(ore, t->children[0]);
-  for (i = 1; i < t->children_num; i += 2) {
-    char* op = t->children[i]->contents;
-    ore_value rhs = ore_eval(ore, t->children[i+1]);
-    switch (v.t) {
-      case ORE_TYPE_INT:
-        {
-          int iv = rhs.t == ORE_TYPE_INT ? rhs.v.i : rhs.t == ORE_TYPE_FLOAT ? (int) rhs.v.d : 0;
-          if (strcmp(op, "+") == 0) { v.v.i += iv; }
-          else if (strcmp(op, "-") == 0) { v.v.i -= iv; }
-          else if (strcmp(op, "*") == 0) { v.v.i *= iv; }
-          else if (strcmp(op, "/") == 0) { v.v.i /= iv; }
-          else if (strcmp(op, "%") == 0) { v.v.i %= iv; }
-          else {
-            fprintf(stderr, "unknown operator '%s' for int\n", op);
-            ore->err = ORE_ERROR_EXCEPTION;
-            return ore_value_nil();
-          }
+ore_expr0(ore_context* ore, ore_value lhs, const char* op, ore_value rhs) {
+  switch (lhs.t) {
+    case ORE_TYPE_INT:
+      {
+        int iv = rhs.t == ORE_TYPE_INT ? rhs.v.i : rhs.t == ORE_TYPE_FLOAT ? (int) rhs.v.d : 0;
+        if (*op == '+') { lhs.v.i += iv; }
+        else if (*op == '-') { lhs.v.i -= iv; }
+        else if (*op == '*') { lhs.v.i *= iv; }
+        else if (*op == '/') { lhs.v.i /= iv; }
+        else if (*op == '%') { lhs.v.i %= iv; }
+        else {
+          fprintf(stderr, "unknown operator '%s' for int\n", op);
+          ore->err = ORE_ERROR_EXCEPTION;
+          return ore_value_nil();
         }
-        break;
-      case ORE_TYPE_FLOAT:
-        {
-          double fv = rhs.t == ORE_TYPE_INT ? (double) rhs.v.i : rhs.t == ORE_TYPE_FLOAT ? rhs.v.d : 0;
-          if (strcmp(op, "+") == 0) { v.v.d += fv; }
-          else if (strcmp(op, "-") == 0) { v.v.d -= fv; }
-          else if (strcmp(op, "*") == 0) { v.v.d *= fv; }
-          else if (strcmp(op, "/") == 0) { v.v.d /= fv; }
-          else if (strcmp(op, "%") == 0) { v.v.d = ((int) v.v.d % (int) fv); }
-          else {
-            fprintf(stderr, "unknown operator '%s' for float\n", op);
-            ore->err = ORE_ERROR_EXCEPTION;
-            return ore_value_nil();
-          }
+      }
+      break;
+    case ORE_TYPE_FLOAT:
+      {
+        double fv = rhs.t == ORE_TYPE_INT ? (double) rhs.v.i : rhs.t == ORE_TYPE_FLOAT ? rhs.v.d : 0;
+        if (*op == '+') { lhs.v.d += fv; }
+        else if (*op == '-') { lhs.v.d -= fv; }
+        else if (*op == '*') { lhs.v.d *= fv; }
+        else if (*op == '/') { lhs.v.d /= fv; }
+        else if (*op == '%') { lhs.v.d = ((int) lhs.v.d % (int) fv); }
+        else {
+          fprintf(stderr, "unknown operator '%s' for float\n", op);
+          ore->err = ORE_ERROR_EXCEPTION;
+          return ore_value_nil();
         }
-        break;
-      case ORE_TYPE_STRING:
-        {
-          char buf[32], *p = buf;
-          if (!strcmp(op, "+")) {
-            if (rhs.t == ORE_TYPE_INT)
-              sprintf(buf, "%i", rhs.v.i);
-            else if (rhs.t == ORE_TYPE_FLOAT)
-              sprintf(buf, "%f", rhs.v.d);
-            else if (rhs.t == ORE_TYPE_STRING)
-              p = rhs.v.s->p;
-            else {
-              fprintf(stderr, "unknown operator '%s' for string\n", op);
-              ore->err = ORE_ERROR_EXCEPTION;
-              return ore_value_nil();
-            }
-
-            size_t l = strlen(p) + strlen(v.v.s->p);
-            char* s = calloc(1, l + 1);
-            strcpy(s, v.v.s->p);
-            strcat(s, p);
-            v = ore_value_str_from_ptr(ore, s, l);
-          } else {
+      }
+      break;
+    case ORE_TYPE_STRING:
+      {
+        char buf[32], *p = buf;
+        if (*op == '+') {
+          if (rhs.t == ORE_TYPE_INT)
+            sprintf(buf, "%i", rhs.v.i);
+          else if (rhs.t == ORE_TYPE_FLOAT)
+            sprintf(buf, "%f", rhs.v.d);
+          else if (rhs.t == ORE_TYPE_STRING)
+            p = rhs.v.s->p;
+          else {
             fprintf(stderr, "unknown operator '%s' for string\n", op);
             ore->err = ORE_ERROR_EXCEPTION;
             return ore_value_nil();
           }
+
+          size_t l = strlen(p) + strlen(lhs.v.s->p);
+          char* s = calloc(1, l + 1);
+          strcpy(s, lhs.v.s->p);
+          strcat(s, p);
+          lhs = ore_value_str_from_ptr(ore, s, l);
+        } else {
+          fprintf(stderr, "unknown operator '%s' for string\n", op);
+          ore->err = ORE_ERROR_EXCEPTION;
+          return ore_value_nil();
         }
-        break;
-      default:
-        fprintf(stderr, "unknown operator '%s' for %s\n", op, ore_kind(v));
-        ore->err = ORE_ERROR_EXCEPTION;
-        return ore_value_nil();
-    }
+      }
+      break;
+    default:
+      fprintf(stderr, "unknown operator '%s' for %s\n", op, ore_kind(lhs));
+      ore->err = ORE_ERROR_EXCEPTION;
+      return ore_value_nil();
   }
-  return v;
+  return lhs;
+}
+
+static ore_value
+ore_expr(ore_context* ore, mpc_ast_t* t) {
+  int i;
+  ore_value lhs = ore_eval(ore, t->children[0]);
+  for (i = 1; i < t->children_num; i += 2) {
+    char* op = t->children[i]->contents;
+    ore_value rhs = ore_eval(ore, t->children[i+1]);
+    lhs = ore_expr0(ore, lhs, op, rhs);
+  }
+  return lhs;
 }
 
 static int
@@ -1442,12 +1449,16 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     return ore_expr(ore, t);
   }
   if (is_a(t, "let_v")) {
-    ore_value v = ore_eval(ore, t->children[2]);
-    ore_set(ore, t->children[0]->contents, v);
-    return v;
+    const char* op = t->children[1]->contents;
+    ore_value rhs = ore_eval(ore, t->children[2]);
+    ore_value lhs = *op != '=' ?
+      ore_expr0(ore, ore_eval(ore, t->children[0]), op, rhs) : rhs;
+    ore_set(ore, t->children[0]->contents, lhs);
+    return lhs;
   }
   if (is_a(t, "let_a")) {
     ore_value lhs = ore_eval(ore, t->children[0]->children[0]);
+    const char* op = t->children[1]->contents;
     ore_value* r = NULL;
     for (i = 2; i < t->children[0]->children_num - 1; i += 3) {
       ore_value key = ore_eval(ore, t->children[0]->children[i]);
@@ -1458,12 +1469,14 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
       return ore_value_nil();
     }
     ore_value rhs = ore_eval(ore, t->children[2]);
+    if (*op != '=') lhs = ore_expr0(ore, lhs, op, rhs);
     ore_value_ref(rhs);
     *r = rhs;
     return rhs;
   }
   if (is_a(t, "let_p")) {
     ore_value lhs = ore_eval(ore, t->children[0]->children[0]);
+    const char* op = t->children[1]->contents;
     ore_value* r = NULL;
     for (i = 2; i < t->children[0]->children_num; i += 2) {
       ore_value key = ore_value_str_from_ptr(ore, t->children[0]->children[i]->contents, -1);
@@ -1474,6 +1487,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
       return ore_value_nil();
     }
     ore_value rhs = ore_eval(ore, t->children[2]);
+    if (*op != '=') lhs = ore_expr0(ore, lhs, op, rhs);
     ore_value_ref(rhs);
     *r = rhs;
     return rhs;
@@ -1687,11 +1701,12 @@ main(int argc, char **argv) {
   mpc_parser_t* m_ident      = mpc_new("ident");
   mpc_parser_t* m_cmp        = mpc_new("cmp");
   mpc_parser_t* m_term       = mpc_new("term");
-  mpc_parser_t* m_lexp       = mpc_new("lexp");
-  mpc_parser_t* m_letv       = mpc_new("let_v");
   mpc_parser_t* m_value      = mpc_new("value");
   mpc_parser_t* m_item       = mpc_new("item");
   mpc_parser_t* m_prop       = mpc_new("prop");
+  mpc_parser_t* m_lexp       = mpc_new("lexp");
+  mpc_parser_t* m_leto       = mpc_new("let_o");
+  mpc_parser_t* m_letv       = mpc_new("let_v");
   mpc_parser_t* m_leta       = mpc_new("let_a");
   mpc_parser_t* m_letp       = mpc_new("let_p");
   mpc_parser_t* m_if         = mpc_new("if");
@@ -1735,11 +1750,12 @@ m_ident,\
 m_cmp,\
 m_term,\
 m_lexp,\
-m_letv,\
 m_value,\
 m_item,\
 m_prop,\
+m_leto,\
 m_leta,\
+m_letv,\
 m_letp,\
 m_if,\
 m_ifstmt,\
