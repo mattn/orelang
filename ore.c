@@ -1,5 +1,6 @@
 #include "ore.h"
-#include <unistd.h>
+
+extern char **environ;
 
 #define STRUCTURE \
 "                                                                        \n" \
