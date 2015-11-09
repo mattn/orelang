@@ -1719,8 +1719,6 @@ ore_new(ore_context* parent) {
 
 void
 ore_destroy(ore_context* ore) {
-  ore_value v = { ORE_TYPE_NIL };
-  kh_foreach_value(ore->env, v, unref_code(v));
   kh_destroy(value, ore->env);
   free(ore);
 }
