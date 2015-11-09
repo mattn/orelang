@@ -1,4 +1,5 @@
 #include "ore.h"
+#include <unistd.h>
 
 #define STRUCTURE \
 "                                                                        \n" \
@@ -727,22 +728,29 @@ ore_cfunc_load(ore_context* ore, int num_in, ore_value* args, void* u) {
 
 static ore_value
 ore_cfunc_environ(ore_context* ore, int num_in, ore_value* args, void* u) {
-  int i;
-  ore_hash_t* h = kh_init(value);
-  for (i = 0; environ[i]; i++) {
-    const char* p = environ[i];
-    if (p == NULL) break;
-    const char* t = strchr(p, '=');
-    if (t) {
-      int r;
-      char* n = calloc(1, t-p+1);
-      memcpy(n, p, t-p);
-      ore_value val = ore_value_str_from_ptr(ore, (char*) t+1, -1);
-      khint_t k = kh_put(value, h, n, &r);
-      kh_value(h, k) = val;
+  if (num_in == 1 && args[0].v.s->p) {
+    return ore_value_str_from_ptr(ore, (char*) getenv(args[0].v.s->p), -1);
+  } else {
+    int i;
+    ore_hash_t* h = kh_init(value);
+    for (i = 0; environ[i]; i++) {
+      const char* p = environ[i];
+      if (p == NULL) break;
+      const char* t = strchr(p, '=');
+      if (t) {
+        int r;
+        char* n = calloc(1, t-p+1);
+        memcpy(n, p, t-p);
+        ore_value val = ore_value_str_from_ptr(ore, (char*) t+1, -1);
+        khint_t k = kh_put(value, h, n, &r);
+        kh_value(h, k) = val;
+      }
     }
+    return ore_value_hash_from_khash(ore, h);
   }
-  return ore_value_hash_from_khash(ore, h);
+  fprintf(stderr, "invalid argument\n");
+  ore->err = ORE_ERROR_EXCEPTION;
+  return ore_value_nil();
 }
 
 static ore_value
@@ -1859,7 +1867,7 @@ m_program
   ore_define_cfunc(ore, "range", 1, 2, ore_cfunc_range, NULL);
   ore_define_cfunc(ore, "typeof", 1, 1, ore_cfunc_typeof, NULL);
   ore_define_cfunc(ore, "load", 1, 1, ore_cfunc_load, &pc);
-  ore_define_cfunc(ore, "environ", 0, 0, ore_cfunc_environ, &pc);
+  ore_define_cfunc(ore, "environ", 0, 1, ore_cfunc_environ, &pc);
   ore_define_cfunc(ore, "exit", 1, 1, ore_cfunc_exit, NULL);
   ore_array_t* args = kl_init(value);
   int i;
