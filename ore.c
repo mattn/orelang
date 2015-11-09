@@ -51,8 +51,6 @@ extern char **environ;
 "for_in     : \"for\" '(' <ident> \"in\" <lexp> ')' '{' <stmts> '}' ;    \n" \
 "var        : \"var\" <ident> '=' <lexp> ';' ;                           \n" \
 "vararg     : \"...\" ;                                                  \n" \
-"stmts      : <stmt>* ;                                                  \n" \
-"                                                                        \n" \
 "lambda     : \"func\"                                                     " \
 "         '(' <ident>? (<vararg> | (',' <ident>)*) ')' '{' <stmts> '}' ; \n" \
 "func       : \"func\" <ident>                                             " \
@@ -70,7 +68,8 @@ extern char **environ;
 "stmt       : (<let_v> | <let_a> | <let_p> | <var> | <if>                  " \
 "         | <while> | <for_in>                                             " \
 "         | <func> | <class_ext> | <class> | <return> | <break>          \n" \
-"         | <continue> | <comment> | (<lexp> ';')) ;                     \n" \
+"         | <continue> | <comment>) ;                                    \n" \
+"stmts      : <stmt>* ;                                                  \n" \
 "program    : <stmts> <eof> ;                                            \n"
 
 #define is_a(t, a) (strstr(t->tag, a) != NULL)
