@@ -1181,8 +1181,14 @@ ore_index_ref(ore_context* ore, ore_value v, ore_value e, int update) {
 
 static ore_value
 ore_expr0(ore_context* ore, ore_value lhs, const char* op, ore_value rhs) {
+  if (lhs.t== ORE_TYPE_INT && rhs.t == ORE_TYPE_FLOAT) {
+    double d = (double) lhs.v.i;
+    lhs.t = ORE_TYPE_FLOAT;
+    lhs.v.d = d;
+  }
   switch (lhs.t) {
     case ORE_TYPE_INT:
+      if (rhs.t == ORE_TYPE_INT || rhs.t== ORE_TYPE_FLOAT)
       {
         int iv = rhs.t == ORE_TYPE_INT ? rhs.v.i : rhs.t == ORE_TYPE_FLOAT ? (int) rhs.v.d : 0;
         if (*op == '+') { lhs.v.i += iv; }
@@ -1195,9 +1201,14 @@ ore_expr0(ore_context* ore, ore_value lhs, const char* op, ore_value rhs) {
           ore->err = ORE_ERROR_EXCEPTION;
           return ore_value_nil();
         }
+      } else {
+        fprintf(stderr, "unknown operator '%s' for int\n", op);
+        ore->err = ORE_ERROR_EXCEPTION;
+        return ore_value_nil();
       }
       break;
     case ORE_TYPE_FLOAT:
+      if (rhs.t == ORE_TYPE_INT || rhs.t== ORE_TYPE_FLOAT)
       {
         double fv = rhs.t == ORE_TYPE_INT ? (double) rhs.v.i : rhs.t == ORE_TYPE_FLOAT ? rhs.v.d : 0;
         if (*op == '+') { lhs.v.d += fv; }
@@ -1210,6 +1221,10 @@ ore_expr0(ore_context* ore, ore_value lhs, const char* op, ore_value rhs) {
           ore->err = ORE_ERROR_EXCEPTION;
           return ore_value_nil();
         }
+      } else {
+        fprintf(stderr, "unknown operator '%s' for float\n", op);
+        ore->err = ORE_ERROR_EXCEPTION;
+        return ore_value_nil();
       }
       break;
     case ORE_TYPE_STRING:
