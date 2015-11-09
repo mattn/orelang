@@ -1029,12 +1029,13 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
   } else if (is_a(t->children[0], "prop")) {
     // FIXME
     pfn = t->children[0]->children[2]->contents;
+    ore_value inst = ore_eval(ore, t->children[0]->children[0]);
     while (ore != NULL) {
-      fn = ore_eval(ore, t->children[0]);
+      fn = ore_prop(ore, pfn);
       if (fn.t == ORE_TYPE_FUNC || fn.t == ORE_TYPE_CFUNC) {
         break;
       }
-      ore_value super = ore_prop(ore, "super");
+      ore_value super = ore_prop(inst.v.o->e, "super");
       if (super.t == ORE_TYPE_NIL)
         break;
       ore = super.v.o->e;
