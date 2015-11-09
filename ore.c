@@ -387,7 +387,7 @@ ore_value_hash_from_khash(ore_context* ore, ore_hash_t* p) {
 }
 
 static ore_value
-ore_define_class(ore_context* ore, mpc_ast_t* t, const char* base) {
+ore_define_class(ore_context* ore, mpc_ast_t* tn, mpc_ast_t* tb, const char* base) {
   ore_value v = { ORE_TYPE_CLASS };
   v.v.c = (ore_class*) malloc(sizeof(ore_class));
   if (!v.v.c) {
@@ -395,14 +395,14 @@ ore_define_class(ore_context* ore, mpc_ast_t* t, const char* base) {
     ore->err = ORE_ERROR_EXCEPTION;
     return ore_value_nil();
   }
-  v.v.c->b = base;
-  v.v.c->n = strdup(t->children[1]->contents);
+  v.v.c->n = strdup(tn->contents);
   if (!v.v.c->n) {
     fprintf(stderr, "failed to allocate memory\n");
     ore->err = ORE_ERROR_EXCEPTION;
     return ore_value_nil();
   }
-  v.v.c->t = t->children[3];
+  v.v.c->t = tb;
+  v.v.c->b = base;
   ore_context* g = ore;
   while (g->parent) g = g->parent;
   ore_define(g, v.v.c->n, v);
@@ -415,7 +415,9 @@ ore_find_statements(mpc_ast_t* t) {
   if (is_a(t, "template")) return t;
   for (i = 0; i < t->children_num; i++) {
     if (is_a(t->children[i], "char") && t->children[i]->contents[0] == '{') {
-      return t->children[i+1];
+      if (t->children[i+1]->contents[0] != '}') {
+        return t->children[i+1];
+      }
     }
   }
   return NULL;
@@ -481,7 +483,7 @@ static ore_value
 ore_find_global(ore_context* ore, const char* name) {
   ore_context* g = ore;
   while (g->parent) g = g->parent;
-  return ore_get(g, name);
+  return ore_prop(g, name);
 }
 
 static ore_value
@@ -496,7 +498,8 @@ ore_class_new(ore_context* ore, ore_value clazz) {
   }
   if (clazz.v.c->b != NULL) {
     ore_value bc = ore_find_global(ore, clazz.v.c->b);
-    ore_define(this, "super", ore_class_new(this, bc));
+    if (bc.t == ORE_TYPE_CLASS)
+      ore_define(this, "super", ore_class_new(this, bc));
   }
   v.v.o->t = clazz.t;
   v.v.o->c = clazz.v.c;
@@ -1027,18 +1030,21 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
     pfn = t->children[0]->contents;
     fn = ore_get(ore, pfn);
   } else if (is_a(t->children[0], "prop")) {
-    // FIXME
     pfn = t->children[0]->children[2]->contents;
-    ore_value inst = ore_eval(ore, t->children[0]->children[0]);
-    while (ore != NULL) {
-      fn = ore_prop(ore, pfn);
-      if (fn.t == ORE_TYPE_FUNC || fn.t == ORE_TYPE_CFUNC) {
-        break;
+    fn = ore_eval(ore, t->children[0]);
+    if (fn.t == ORE_TYPE_NIL) {
+      // FIXME
+      ore_context* tmp = ore;
+      ore_value inst = ore_eval(tmp, t->children[0]->children[0]);
+      while (1) {
+        inst = ore_prop(inst.v.o->e, "super");
+        if (inst.t == ORE_TYPE_NIL)
+          break;
+        fn = ore_prop(inst.v.o->e, pfn);
+        if (fn.t == ORE_TYPE_FUNC || fn.t == ORE_TYPE_CFUNC) {
+          break;
+        }
       }
-      ore_value super = ore_prop(inst.v.o->e, "super");
-      if (super.t == ORE_TYPE_NIL)
-        break;
-      ore = super.v.o->e;
     }
   } else {
     pfn = "<anonymous>";
@@ -1500,10 +1506,10 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     return v;
   }
   if (is_a(t, "class_ext")) {
-    return ore_define_class(ore, t, t->children[3]->contents);
+    return ore_define_class(ore, t->children[1], t->children[5], t->children[3]->contents);
   }
   if (is_a(t, "class")) {
-    return ore_define_class(ore, t, NULL);
+    return ore_define_class(ore, t->children[1], t->children[3], NULL);
   }
   if (is_a(t, "new")) {
     return ore_object_new(ore, t);
@@ -1605,7 +1611,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   if (is_a(t, "char") && !strcmp(t->contents, ";")) {
     return ore_value_nil();
   }
-  fprintf(stderr, "unknown operation '%s'\n", t->tag);
+  fprintf(stderr, "unknown operation '%s'\n", t->contents);
   ore->err = ORE_ERROR_EXCEPTION;
   return ore_value_nil();
 }
