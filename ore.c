@@ -34,10 +34,9 @@ extern char **environ;
 "pair       : <string> ':' <lexp> ;                                      \n" \
 "hash       : '{' <pair>? (',' <pair>)* '}' ;                            \n" \
 "ident      : /[a-zA-Z_][a-zA-Z0-9_]*/ ;                                 \n" \
-"term       : (<cmp>                                                       " \
+"term       : (<lambda> | <item> | <methodcall> | <prop> | <cmp>           " \
 "         | <anoncall> | <call>                                            " \
-"         | <lambda> | <item> | <methodcall> | <prop>                      " \
-"         | <factor> (('*' | '/' | '%' | '+' | '-') <factor>)*) ;        \n" \
+"         | <factor> (('*' | '/' | '%' | '+' | '-') <factor>)* ) ;       \n" \
 "lexp       : <term> (('+' | '-') <term>)* ;                             \n" \
 "let_o      : (\"=\" | \"+=\" | \"-=\" | \"*=\" | \"/=\") ;              \n" \
 "let_v      : <ident> <let_o> <lexp> ';' ;                               \n" \
