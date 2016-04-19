@@ -570,6 +570,7 @@ ore_value_env_from_context(ore_context* p) {
 
 static ore_value
 ore_value_str_from_ptr(ore_context* ore, char* p, int l) {
+  if (p == NULL) return ore_value_nil();
   ore_value v = { ORE_TYPE_STRING };
   v.v.s = (ore_string*) malloc(sizeof(ore_string));
   if (!v.v.s) {
