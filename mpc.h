@@ -81,6 +81,7 @@ typedef mpc_val_t*(*mpc_fold_t)(int,mpc_val_t**);
 */
 
 mpc_parser_t *mpc_new(const char *name);
+mpc_parser_t *mpc_copy(mpc_parser_t *a);
 mpc_parser_t *mpc_define(mpc_parser_t *p, mpc_parser_t *a);
 mpc_parser_t *mpc_undefine(mpc_parser_t *p);
 
@@ -258,8 +259,6 @@ mpc_parser_t *mpc_re(const char *re);
 typedef struct mpc_ast_t {
   char *tag;
   char *contents;
-  void *data;
-  void (*free)(void*);
   mpc_state_t state;
   int children_num;
   struct mpc_ast_t** children;
@@ -276,6 +275,11 @@ mpc_ast_t *mpc_ast_state(mpc_ast_t *a, mpc_state_t s);
 void mpc_ast_delete(mpc_ast_t *a);
 void mpc_ast_print(mpc_ast_t *a);
 void mpc_ast_print_to(mpc_ast_t *a, FILE *fp);
+
+int mpc_ast_get_index(mpc_ast_t *ast, const char *tag);
+int mpc_ast_get_index_lb(mpc_ast_t *ast, const char *tag, int lb);
+mpc_ast_t *mpc_ast_get_child(mpc_ast_t *ast, const char *tag);
+mpc_ast_t *mpc_ast_get_child_lb(mpc_ast_t *ast, const char *tag, int lb);
 
 /*
 ** Warning: This function currently doesn't test for equality of the `state` member!
@@ -316,10 +320,13 @@ mpc_err_t *mpca_lang_pipe(int flags, FILE *f, ...);
 mpc_err_t *mpca_lang_contents(int flags, const char *filename, ...);
 
 /*
-** Debug & Testing
+** Misc
 */
 
+
 void mpc_print(mpc_parser_t *p);
+void mpc_optimise(mpc_parser_t *p);
+void mpc_stats(mpc_parser_t *p);
 
 int mpc_test_pass(mpc_parser_t *p, const char *s, const void *d,
   int(*tester)(const void*, const void*), 
