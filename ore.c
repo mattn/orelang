@@ -68,7 +68,7 @@ extern char **environ;
 "stmt       : (<let_v> | <let_a> | <let_p> | <var> | <if>                  " \
 "         | <while> | <for_in>                                             " \
 "         | <func> | <class_ext> | <class> | <return> | <break>          \n" \
-"         | <continue> | <comment>) ;                                    \n" \
+"         | <continue> | <lexp> ';' | <comment>) ;                       \n" \
 "stmts      : <stmt>* ;                                                  \n" \
 "program    : <stmts> <eof> ;                                            \n"
 
@@ -1428,8 +1428,11 @@ static ore_value
 ore_eval(ore_context* ore, mpc_ast_t* t) {
   int i, r;
   if (!t) return ore_value_nil();
-  if (t->data) {
-    return *(ore_value*)t->data;
+
+  khiter_t k;
+  k = kh_get(ast, ore->ast, (khint64_t)(uintptr_t)t);
+  if (k != kh_end(ore->ast)) {
+    return kh_value(ore->ast, k);
   }
 
   if (is_a(t, "eof") || is_a(t, "comment")) {
@@ -1445,15 +1448,15 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     return ore_value_nil();
   }
   if (is_a(t, "number")) {
-    ore_value v = ore_parse_num(ore, t->contents);
-    t->data = malloc(sizeof(ore_value));
-    memcpy(t->data, &v, sizeof(ore_value));
+	ore_value v = ore_parse_num(ore, t->contents);
+	k = kh_put(ast, ore->ast, (khint64_t)(uintptr_t)t, &r);
+	kh_value(ore->ast, k) = v;
     return v;
   }
   if (is_a(t, "string")) {
-    ore_value v = ore_parse_str(ore, t->contents);
-    t->data = malloc(sizeof(ore_value));
-    memcpy(t->data, &v, sizeof(ore_value));
+	ore_value v = ore_parse_str(ore, t->contents);
+	k = kh_put(ast, ore->ast, (khint64_t)(uintptr_t)t, &r);
+	kh_value(ore->ast, k) = v;
     return v;
   }
   if (is_a(t, "array")) {
@@ -1476,8 +1479,8 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   if (is_a(t, "regexp")) {
     ore_value v = ore_parse_str(ore, t->contents);
     v.t = ORE_TYPE_REGEXP;
-    t->data = malloc(sizeof(ore_value));
-    memcpy(t->data, &v, sizeof(ore_value));
+	k = kh_put(ast, ore->ast, (khint64_t)(uintptr_t)t, &r);
+	kh_value(ore->ast, k) = v;
     return v;
   }
   if (is_a(t, "item")) {
@@ -1707,6 +1710,7 @@ ore_new(ore_context* parent) {
   ore->ct = kh_init(value);
   ore->err = ORE_ERROR_NONE;
   ore->parent = parent;
+  ore->ast = kh_init(ast);
   return ore;
 }
 
@@ -1719,6 +1723,7 @@ ore_new(ore_context* parent) {
 void
 ore_destroy(ore_context* ore) {
   kh_destroy(value, ore->env);
+  kh_destroy(ast, ore->ast);
   free(ore);
 }
 

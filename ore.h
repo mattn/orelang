@@ -109,12 +109,16 @@ void ore_value_free(void* p);
 KHASH_MAP_INIT_STR(value, ore_value)
 KLIST_INIT(value, ore_value, ore_value_free)
 
+KHASH_MAP_INIT_INT64(ast, ore_value)
+typedef khash_t(ast) ore_ast_t;
+
 typedef struct _ore_context {
   khash_t(value)* env;
   struct _ore_context* parent;
   khash_t(value)* ct;
   void* c;
   int err;
+  ore_ast_t* ast;
 } ore_context;
 
 typedef ore_value (*ore_cfunc_t)(ore_context*, int, ore_value*, void*);
