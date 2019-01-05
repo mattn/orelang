@@ -28,4 +28,4 @@ clean :
 	rm -f *.o $(TARGET)
 
 test :
-	./t/test.sh
+	sh -c ./t/test.sh
