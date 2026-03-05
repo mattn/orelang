@@ -1509,6 +1509,26 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   if (is_a(t, "ident")) {
     return ore_get(ore, t->contents);
   }
+  if (is_a(t, "cmp")) {
+    ore_value lhs = ore_eval(ore, t->children[0]);
+    ore_value rhs = ore_eval(ore, t->children[2]);
+    return ore_cmp(ore, lhs, t->children[1]->contents, rhs);
+  }
+  if (is_a(t, "call")) {
+    return ore_call(ore, t);
+  }
+  if (is_a(t, "new")) {
+    return ore_object_new(ore, t);
+  }
+  if (is_a(t, "lambda")) {
+    ore_value v = { ORE_TYPE_FUNC };
+    v.v.f.ore = ore;
+    v.v.f.num_in = -1;
+    v.v.f.max_in = -1;
+    v.v.f.x.o = t;
+    v.v.f.u = NULL;
+    return v;
+  }
   if (is_a(t, "factor")) {
     return ore_eval(ore, t->children[1]);
   }
@@ -1564,11 +1584,6 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     ore_define(ore, t->children[1]->contents, v);
     return v;
   }
-  if (is_a(t, "cmp")) {
-    ore_value lhs = ore_eval(ore, t->children[0]);
-    ore_value rhs = ore_eval(ore, t->children[2]);
-    return ore_cmp(ore, lhs, t->children[1]->contents, rhs);
-  }
   if (is_a(t, "func")) {
     ore_value v = { ORE_TYPE_FUNC };
     v.v.f.ore = ore;
@@ -1579,26 +1594,11 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     ore_define(ore, t->children[1]->contents, v);
     return v;
   }
-  if (is_a(t, "lambda")) {
-    ore_value v = { ORE_TYPE_FUNC };
-    v.v.f.ore = ore;
-    v.v.f.num_in = -1;
-    v.v.f.max_in = -1;
-    v.v.f.x.o = t;
-    v.v.f.u = NULL;
-    return v;
-  }
   if (is_a(t, "class_ext")) {
     return ore_define_class(ore, t->children[1], t->children[5], t->children[3]->contents);
   }
   if (is_a(t, "class")) {
     return ore_define_class(ore, t->children[1], t->children[3], NULL);
-  }
-  if (is_a(t, "new")) {
-    return ore_object_new(ore, t);
-  }
-  if (is_a(t, "call")) {
-    return ore_call(ore, t);
   }
   if (is_a(t, "return")) {
     ore_value v = ore_eval(ore, t->children[1]);
@@ -1680,13 +1680,15 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     return ore_value_nil();
   }
   if (is_a(t, "stmts") || is_a(t, "template") || t->tag[0] == '>') {
-    ore_value v;
+    ore_value v = ore_value_nil();
     for (i = 0; i < t->children_num; i++) {
+      if (is_a(t->children[i], "char") && !strcmp(t->children[i]->contents, ";"))
+        continue;
       v = ore_eval(ore, t->children[i]);
       if (ore->err != ORE_ERROR_NONE)
         return v;
     }
-    return ore_value_nil();
+    return v;
   }
   if (is_a(t, "stmt")) {
     return ore_eval(ore, t->children[0]);

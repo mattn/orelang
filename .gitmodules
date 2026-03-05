@@ -1,0 +1,6 @@
+[submodule "deps/mpc"]
+	path = deps/mpc
+	url = https://github.com/orangeduck/mpc.git
+[submodule "deps/klib"]
+	path = deps/klib
+	url = https://github.com/attractivechaos/klib.git
