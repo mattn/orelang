@@ -73,6 +73,73 @@ extern char **environ;
 
 #define is_a(t, a) (strstr(t->tag, a) != NULL)
 
+enum {
+  ORE_TAG_UNKNOWN = 0,
+  ORE_TAG_EOF, ORE_TAG_TRUE, ORE_TAG_FALSE, ORE_TAG_NIL,
+  ORE_TAG_NUMBER, ORE_TAG_STRING, ORE_TAG_ARRAY, ORE_TAG_HASH,
+  ORE_TAG_REGEXP, ORE_TAG_ITEM, ORE_TAG_PROP, ORE_TAG_IDENT,
+  ORE_TAG_CMP, ORE_TAG_CALL, ORE_TAG_NEW, ORE_TAG_LAMBDA,
+  ORE_TAG_FACTOR, ORE_TAG_LEXP_TERM,
+  ORE_TAG_LET_V, ORE_TAG_LET_A, ORE_TAG_LET_P,
+  ORE_TAG_VAR, ORE_TAG_FUNC,
+  ORE_TAG_CLASS_EXT, ORE_TAG_CLASS,
+  ORE_TAG_RETURN, ORE_TAG_BREAK, ORE_TAG_CONTINUE,
+  ORE_TAG_IF_STMT, ORE_TAG_IF, ORE_TAG_WHILE, ORE_TAG_FOR_IN,
+  ORE_TAG_STMTS, ORE_TAG_STMT, ORE_TAG_SEMI,
+};
+
+static int
+ore_classify_tag(mpc_ast_t* t) {
+  if (t->tag[0] == '>') return ORE_TAG_STMTS;
+  if (is_a(t, "eof") || is_a(t, "comment")) return ORE_TAG_EOF;
+  if (is_a(t, "true")) return ORE_TAG_TRUE;
+  if (is_a(t, "false")) return ORE_TAG_FALSE;
+  if (is_a(t, "nil")) return ORE_TAG_NIL;
+  if (is_a(t, "number")) return ORE_TAG_NUMBER;
+  if (is_a(t, "string")) return ORE_TAG_STRING;
+  if (is_a(t, "array")) return ORE_TAG_ARRAY;
+  if (is_a(t, "hash")) return ORE_TAG_HASH;
+  if (is_a(t, "regexp")) return ORE_TAG_REGEXP;
+  if (is_a(t, "item")) return ORE_TAG_ITEM;
+  if (is_a(t, "prop")) return ORE_TAG_PROP;
+  if (is_a(t, "ident")) return ORE_TAG_IDENT;
+  if (is_a(t, "cmp")) return ORE_TAG_CMP;
+  if (is_a(t, "call")) return ORE_TAG_CALL;
+  if (is_a(t, "new")) return ORE_TAG_NEW;
+  if (is_a(t, "lambda")) return ORE_TAG_LAMBDA;
+  if (is_a(t, "factor")) return ORE_TAG_FACTOR;
+  if (is_a(t, "lexp") || is_a(t, "term")) return ORE_TAG_LEXP_TERM;
+  if (is_a(t, "let_v")) return ORE_TAG_LET_V;
+  if (is_a(t, "let_a")) return ORE_TAG_LET_A;
+  if (is_a(t, "let_p")) return ORE_TAG_LET_P;
+  if (is_a(t, "var")) return ORE_TAG_VAR;
+  if (is_a(t, "func")) return ORE_TAG_FUNC;
+  if (is_a(t, "class_ext")) return ORE_TAG_CLASS_EXT;
+  if (is_a(t, "class")) return ORE_TAG_CLASS;
+  if (is_a(t, "return")) return ORE_TAG_RETURN;
+  if (is_a(t, "break")) return ORE_TAG_BREAK;
+  if (is_a(t, "continue")) return ORE_TAG_CONTINUE;
+  if (is_a(t, "if_stmt")) return ORE_TAG_IF_STMT;
+  if (is_a(t, "if")) return ORE_TAG_IF;
+  if (is_a(t, "while")) return ORE_TAG_WHILE;
+  if (is_a(t, "for_in")) return ORE_TAG_FOR_IN;
+  if (is_a(t, "stmts") || is_a(t, "template")) return ORE_TAG_STMTS;
+  if (is_a(t, "stmt")) return ORE_TAG_STMT;
+  if (is_a(t, "char") && !strcmp(t->contents, ";")) return ORE_TAG_SEMI;
+  return ORE_TAG_UNKNOWN;
+}
+
+static int
+ore_get_tag(ore_tag_cache_t* cache, mpc_ast_t* t) {
+  khiter_t k = kh_get(tag, cache, (khint64_t)(uintptr_t)t);
+  if (k != kh_end(cache)) return kh_value(cache, k);
+  int tag_type = ore_classify_tag(t);
+  int r;
+  k = kh_put(tag, cache, (khint64_t)(uintptr_t)t, &r);
+  kh_value(cache, k) = tag_type;
+  return tag_type;
+}
+
 typedef struct {
   mpc_ast_t *root;
   mpc_parser_t *program;
@@ -1065,9 +1132,6 @@ ore_func_call(ore_context* ore, ore_value fn, int num_in, ore_value* args) {
     v = ore_eval(env, stmts);
     if (env->err == ORE_ERROR_EXCEPTION)
       ore->err = env->err;
-    char buf[64];
-    sprintf(buf, "0x%p", env->env);
-    ore_define(ore, buf, ore_value_env_from_context(env));
   }
   return v;
 }
@@ -1140,9 +1204,6 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
           v = ore_eval(env, stmts);
           if (env->err == ORE_ERROR_EXCEPTION)
             ore->err = env->err;
-          char buf[64];
-          sprintf(buf, "0x%p", env->env);
-          ore_define(ore, buf, ore_value_env_from_context(env));
           free(args);
         }
       }
@@ -1435,270 +1496,276 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     return kh_value(ore->ast, k);
   }
 
-  if (is_a(t, "eof") || is_a(t, "comment")) {
+  switch (ore_get_tag(ore->tags, t)) {
+  case ORE_TAG_EOF:
     return ore_value_nil();
-  }
-  if (is_a(t, "true")) {
+  case ORE_TAG_TRUE:
     return ore_value_true();
-  }
-  if (is_a(t, "false")) {
+  case ORE_TAG_FALSE:
     return ore_value_false();
-  }
-  if (is_a(t, "nil")) {
+  case ORE_TAG_NIL:
     return ore_value_nil();
-  }
-  if (is_a(t, "number")) {
-	ore_value v = ore_parse_num(ore, t->contents);
-	k = kh_put(ast, ore->ast, (khint64_t)(uintptr_t)t, &r);
-	kh_value(ore->ast, k) = v;
-    return v;
-  }
-  if (is_a(t, "string")) {
-	ore_value v = ore_parse_str(ore, t->contents);
-	k = kh_put(ast, ore->ast, (khint64_t)(uintptr_t)t, &r);
-	kh_value(ore->ast, k) = v;
-    return v;
-  }
-  if (is_a(t, "array")) {
-    ore_array_t* a = kl_init(value);
-    for (i = 1; i < t->children_num - 1; i += 2) {
-      *kl_pushp(value, a) = ore_eval(ore, t->children[i]);
+  case ORE_TAG_NUMBER:
+    {
+      ore_value v = ore_parse_num(ore, t->contents);
+      k = kh_put(ast, ore->ast, (khint64_t)(uintptr_t)t, &r);
+      kh_value(ore->ast, k) = v;
+      return v;
     }
-    return ore_value_array_from_klist(ore, a);
-  }
-  if (is_a(t, "hash")) {
-    ore_hash_t* h = kh_init(value);
-    for (i = 1; i < t->children_num - 1; i += 2) {
-      ore_value key = ore_eval(ore, t->children[i]->children[0]);
-      ore_value val = ore_eval(ore, t->children[i]->children[2]);
-      khint_t k = kh_put(value, h, key.v.s->p, &r);
-      kh_value(h, k) = val;
+  case ORE_TAG_STRING:
+    {
+      ore_value v = ore_parse_str(ore, t->contents);
+      k = kh_put(ast, ore->ast, (khint64_t)(uintptr_t)t, &r);
+      kh_value(ore->ast, k) = v;
+      return v;
     }
-    return ore_value_hash_from_khash(ore, h);
-  }
-  if (is_a(t, "regexp")) {
-    ore_value v = ore_parse_str(ore, t->contents);
-    v.t = ORE_TYPE_REGEXP;
-	k = kh_put(ast, ore->ast, (khint64_t)(uintptr_t)t, &r);
-	kh_value(ore->ast, k) = v;
-    return v;
-  }
-  if (is_a(t, "item")) {
-    ore_value v = ore_eval(ore, t->children[0]);
-    for (i = 2; i < t->children_num; i += 3) {
-      ore_value key = ore_eval(ore, t->children[i]);
-      ore_value* r = ore_index_ref(ore, v, key, 0);
-      v = r == NULL ? ore_value_nil() : *r;
+  case ORE_TAG_ARRAY:
+    {
+      ore_array_t* a = kl_init(value);
+      for (i = 1; i < t->children_num - 1; i += 2) {
+        *kl_pushp(value, a) = ore_eval(ore, t->children[i]);
+      }
+      return ore_value_array_from_klist(ore, a);
     }
-    return v;
-  }
-  if (is_a(t, "prop")) {
-    ore_value v = ore_eval(ore, t->children[0]);
-    ore_context* this = v.t == ORE_TYPE_OBJECT ? (ore_context*) v.v.o->e : NULL;
-    for (i = 2; i < t->children_num; i += 2) {
-      if (v.t != ORE_TYPE_OBJECT) {
-        fprintf(stderr, "invalid operation for %s\n", ore_kind(v));
-        ore->err = ORE_ERROR_EXCEPTION;
+  case ORE_TAG_HASH:
+    {
+      ore_hash_t* h = kh_init(value);
+      for (i = 1; i < t->children_num - 1; i += 2) {
+        ore_value key = ore_eval(ore, t->children[i]->children[0]);
+        ore_value val = ore_eval(ore, t->children[i]->children[2]);
+        khint_t k = kh_put(value, h, key.v.s->p, &r);
+        kh_value(h, k) = val;
+      }
+      return ore_value_hash_from_khash(ore, h);
+    }
+  case ORE_TAG_REGEXP:
+    {
+      ore_value v = ore_parse_str(ore, t->contents);
+      v.t = ORE_TYPE_REGEXP;
+      k = kh_put(ast, ore->ast, (khint64_t)(uintptr_t)t, &r);
+      kh_value(ore->ast, k) = v;
+      return v;
+    }
+  case ORE_TAG_ITEM:
+    {
+      ore_value v = ore_eval(ore, t->children[0]);
+      for (i = 2; i < t->children_num; i += 3) {
+        ore_value key = ore_eval(ore, t->children[i]);
+        ore_value* r = ore_index_ref(ore, v, key, 0);
+        v = r == NULL ? ore_value_nil() : *r;
+      }
+      return v;
+    }
+  case ORE_TAG_PROP:
+    {
+      ore_value v = ore_eval(ore, t->children[0]);
+      ore_context* this = v.t == ORE_TYPE_OBJECT ? (ore_context*) v.v.o->e : NULL;
+      for (i = 2; i < t->children_num; i += 2) {
+        if (v.t != ORE_TYPE_OBJECT) {
+          fprintf(stderr, "invalid operation for %s\n", ore_kind(v));
+          ore->err = ORE_ERROR_EXCEPTION;
+          return ore_value_nil();
+        }
+        v = ore_prop(this, t->children[i]->contents);
+        if (v.t == ORE_TYPE_OBJECT) this = (ore_context*) v.v.o->e;
+      }
+      return v;
+    }
+  case ORE_TAG_IDENT:
+    return ore_get(ore, t->contents);
+  case ORE_TAG_CMP:
+    {
+      ore_value lhs = ore_eval(ore, t->children[0]);
+      ore_value rhs = ore_eval(ore, t->children[2]);
+      return ore_cmp(ore, lhs, t->children[1]->contents, rhs);
+    }
+  case ORE_TAG_CALL:
+    return ore_call(ore, t);
+  case ORE_TAG_NEW:
+    return ore_object_new(ore, t);
+  case ORE_TAG_LAMBDA:
+    {
+      ore_value v = { ORE_TYPE_FUNC };
+      v.v.f.ore = ore;
+      v.v.f.num_in = -1;
+      v.v.f.max_in = -1;
+      v.v.f.x.o = t;
+      v.v.f.u = NULL;
+      return v;
+    }
+  case ORE_TAG_FACTOR:
+    return ore_eval(ore, t->children[1]);
+  case ORE_TAG_LEXP_TERM:
+    return ore_expr(ore, t);
+  case ORE_TAG_LET_V:
+    {
+      const char* op = t->children[1]->contents;
+      ore_value rhs = ore_eval(ore, t->children[2]);
+      ore_value lhs = *op != '=' ?
+        ore_expr0(ore, ore_eval(ore, t->children[0]), op, rhs) : rhs;
+      ore_set(ore, t->children[0]->contents, lhs);
+      return lhs;
+    }
+  case ORE_TAG_LET_A:
+    {
+      ore_value lhs = ore_eval(ore, t->children[0]->children[0]);
+      const char* op = t->children[1]->contents;
+      ore_value* r = NULL;
+      for (i = 2; i < t->children[0]->children_num - 1; i += 3) {
+        ore_value key = ore_eval(ore, t->children[0]->children[i]);
+        r = ore_index_ref(ore, lhs, key, 1);
+        lhs = r == NULL ? ore_value_nil() : *r;
+      }
+      if (r == NULL) {
         return ore_value_nil();
       }
-      v = ore_prop(this, t->children[i]->contents);
-      if (v.t == ORE_TYPE_OBJECT) this = (ore_context*) v.v.o->e;
+      ore_value rhs = ore_eval(ore, t->children[2]);
+      if (*op != '=') lhs = ore_expr0(ore, lhs, op, rhs);
+      ore_value_ref(rhs);
+      *r = rhs;
+      return rhs;
     }
-    return v;
-  }
-  if (is_a(t, "ident")) {
-    return ore_get(ore, t->contents);
-  }
-  if (is_a(t, "cmp")) {
-    ore_value lhs = ore_eval(ore, t->children[0]);
-    ore_value rhs = ore_eval(ore, t->children[2]);
-    return ore_cmp(ore, lhs, t->children[1]->contents, rhs);
-  }
-  if (is_a(t, "call")) {
-    return ore_call(ore, t);
-  }
-  if (is_a(t, "new")) {
-    return ore_object_new(ore, t);
-  }
-  if (is_a(t, "lambda")) {
-    ore_value v = { ORE_TYPE_FUNC };
-    v.v.f.ore = ore;
-    v.v.f.num_in = -1;
-    v.v.f.max_in = -1;
-    v.v.f.x.o = t;
-    v.v.f.u = NULL;
-    return v;
-  }
-  if (is_a(t, "factor")) {
-    return ore_eval(ore, t->children[1]);
-  }
-  if (is_a(t, "lexp") || is_a(t, "term")) {
-    return ore_expr(ore, t);
-  }
-  if (is_a(t, "let_v")) {
-    const char* op = t->children[1]->contents;
-    ore_value rhs = ore_eval(ore, t->children[2]);
-    ore_value lhs = *op != '=' ?
-      ore_expr0(ore, ore_eval(ore, t->children[0]), op, rhs) : rhs;
-    ore_set(ore, t->children[0]->contents, lhs);
-    return lhs;
-  }
-  if (is_a(t, "let_a")) {
-    ore_value lhs = ore_eval(ore, t->children[0]->children[0]);
-    const char* op = t->children[1]->contents;
-    ore_value* r = NULL;
-    for (i = 2; i < t->children[0]->children_num - 1; i += 3) {
-      ore_value key = ore_eval(ore, t->children[0]->children[i]);
-      r = ore_index_ref(ore, lhs, key, 1);
-      lhs = r == NULL ? ore_value_nil() : *r;
+  case ORE_TAG_LET_P:
+    {
+      ore_value lhs = ore_eval(ore, t->children[0]->children[0]);
+      const char* op = t->children[1]->contents;
+      ore_value* r = NULL;
+      for (i = 2; i < t->children[0]->children_num; i += 2) {
+        ore_value key = ore_value_str_from_ptr(ore, t->children[0]->children[i]->contents, -1);
+        r = ore_index_ref(ore, lhs, key, 0);
+        lhs = r == NULL ? ore_value_nil() : *r;
+      }
+      if (r == NULL) {
+        return ore_value_nil();
+      }
+      ore_value rhs = ore_eval(ore, t->children[2]);
+      if (*op != '=') lhs = ore_expr0(ore, lhs, op, rhs);
+      ore_value_ref(rhs);
+      *r = rhs;
+      return rhs;
     }
-    if (r == NULL) {
-      return ore_value_nil();
+  case ORE_TAG_VAR:
+    {
+      ore_value v = ore_eval(ore, t->children[3]);
+      ore_define(ore, t->children[1]->contents, v);
+      return v;
     }
-    ore_value rhs = ore_eval(ore, t->children[2]);
-    if (*op != '=') lhs = ore_expr0(ore, lhs, op, rhs);
-    ore_value_ref(rhs);
-    *r = rhs;
-    return rhs;
-  }
-  if (is_a(t, "let_p")) {
-    ore_value lhs = ore_eval(ore, t->children[0]->children[0]);
-    const char* op = t->children[1]->contents;
-    ore_value* r = NULL;
-    for (i = 2; i < t->children[0]->children_num; i += 2) {
-      ore_value key = ore_value_str_from_ptr(ore, t->children[0]->children[i]->contents, -1);
-      r = ore_index_ref(ore, lhs, key, 0);
-      lhs = r == NULL ? ore_value_nil() : *r;
+  case ORE_TAG_FUNC:
+    {
+      ore_value v = { ORE_TYPE_FUNC };
+      v.v.f.ore = ore;
+      v.v.f.num_in = -1;
+      v.v.f.max_in = -1;
+      v.v.f.x.o = t;
+      v.v.f.u = NULL;
+      ore_define(ore, t->children[1]->contents, v);
+      return v;
     }
-    if (r == NULL) {
-      return ore_value_nil();
-    }
-    ore_value rhs = ore_eval(ore, t->children[2]);
-    if (*op != '=') lhs = ore_expr0(ore, lhs, op, rhs);
-    ore_value_ref(rhs);
-    *r = rhs;
-    return rhs;
-  }
-  if (is_a(t, "var")) {
-    ore_value v = ore_eval(ore, t->children[3]);
-    ore_define(ore, t->children[1]->contents, v);
-    return v;
-  }
-  if (is_a(t, "func")) {
-    ore_value v = { ORE_TYPE_FUNC };
-    v.v.f.ore = ore;
-    v.v.f.num_in = -1;
-    v.v.f.max_in = -1;
-    v.v.f.x.o = t;
-    v.v.f.u = NULL;
-    ore_define(ore, t->children[1]->contents, v);
-    return v;
-  }
-  if (is_a(t, "class_ext")) {
+  case ORE_TAG_CLASS_EXT:
     return ore_define_class(ore, t->children[1], t->children[5], t->children[3]->contents);
-  }
-  if (is_a(t, "class")) {
+  case ORE_TAG_CLASS:
     return ore_define_class(ore, t->children[1], t->children[3], NULL);
-  }
-  if (is_a(t, "return")) {
-    ore_value v = ore_eval(ore, t->children[1]);
-    ore->err = ORE_ERROR_RETURN;
-    ore_value_ref(v);
-    return v;
-  }
-  if (is_a(t, "break")) {
+  case ORE_TAG_RETURN:
+    {
+      ore_value v = ore_eval(ore, t->children[1]);
+      ore->err = ORE_ERROR_RETURN;
+      ore_value_ref(v);
+      return v;
+    }
+  case ORE_TAG_BREAK:
     ore->err = ORE_ERROR_BREAK;
     return ore_value_nil();
-  }
-  if (is_a(t, "continue")) {
+  case ORE_TAG_CONTINUE:
     ore->err = ORE_ERROR_CONTINUE;
     return ore_value_nil();
-  }
-  if (is_a(t, "if_stmt")) {
+  case ORE_TAG_IF_STMT:
     if (ore_is_true(ore_eval(ore, t->children[2]))) {
       return ore_eval(ore, ore_find_statements(t));
     }
     return ore_value_nil();
-  }
-  if (is_a(t, "if")) {
-    int i;
-    for (i = 0; i < t->children_num; i++) {
-      int r = 0;
-      mpc_ast_t* f = t->children[i];
-      if (is_a(f, "if_stmt")) {
-        r = ore_is_true(ore_eval(ore, f->children[2]));
-      } else if (is_a(f, "else_if")) {
-        r = ore_is_true(ore_eval(ore, f->children[3]));
-      } else {
-        r = 1;
-      }
-      if (r)
-        return ore_eval(ore, ore_find_statements(f));
-    }
-    return ore_value_nil();
-  }
-  if (is_a(t, "while")) {
-    ore_context* env = ore_new(ore);
-    while (ore_is_true(ore_eval(env, t->children[2]))) {
-      ore_eval(env, ore_find_statements(t));
-      if (env->err != ORE_ERROR_NONE) {
-        if (env->err == ORE_ERROR_CONTINUE) {
-          env->err = ORE_ERROR_NONE;
-          continue;
+  case ORE_TAG_IF:
+    {
+      int i;
+      for (i = 0; i < t->children_num; i++) {
+        int r = 0;
+        mpc_ast_t* f = t->children[i];
+        if (is_a(f, "if_stmt")) {
+          r = ore_is_true(ore_eval(ore, f->children[2]));
+        } else if (is_a(f, "else_if")) {
+          r = ore_is_true(ore_eval(ore, f->children[3]));
+        } else {
+          r = 1;
         }
-        break;
+        if (r)
+          return ore_eval(ore, ore_find_statements(f));
       }
+      return ore_value_nil();
     }
-    if (env->err == ORE_ERROR_RETURN)
-      ore->err = ORE_ERROR_RETURN;
-    ore_destroy(env);
-    return ore_value_nil();
-  }
-  if (is_a(t, "for_in")) {
-    ore_value l = ore_eval(ore, t->children[4]);
-    if (l.t != ORE_TYPE_ARRAY) {
-      fprintf(stderr, "expected array for argument\n");
-      ore->err = ORE_ERROR_EXCEPTION;
-    }
-    ore_array_t* a = (ore_array_t*) l.v.a->p;
-    ore_array_iter_t *k;
-    ore_context* env = ore_new(ore);
-    for (k = kl_begin(a); k != kl_end(a); k = kl_next(k)) {
-      ore_define(env, t->children[2]->contents, kl_val(k));
-      ore_eval(env, ore_find_statements(t));
-      if (env->err != ORE_ERROR_NONE) {
-        if (env->err == ORE_ERROR_CONTINUE) {
-          env->err = ORE_ERROR_NONE;
-          continue;
+  case ORE_TAG_WHILE:
+    {
+      ore_context* env = ore_new(ore);
+      while (ore_is_true(ore_eval(env, t->children[2]))) {
+        ore_eval(env, ore_find_statements(t));
+        if (env->err != ORE_ERROR_NONE) {
+          if (env->err == ORE_ERROR_CONTINUE) {
+            env->err = ORE_ERROR_NONE;
+            continue;
+          }
+          break;
         }
-        break;
       }
+      if (env->err == ORE_ERROR_RETURN)
+        ore->err = ORE_ERROR_RETURN;
+      ore_destroy(env);
+      return ore_value_nil();
     }
-    if (env->err == ORE_ERROR_RETURN)
-      ore->err = ORE_ERROR_RETURN;
-    ore_destroy(env);
-    return ore_value_nil();
-  }
-  if (is_a(t, "stmts") || is_a(t, "template") || t->tag[0] == '>') {
-    ore_value v = ore_value_nil();
-    for (i = 0; i < t->children_num; i++) {
-      if (is_a(t->children[i], "char") && !strcmp(t->children[i]->contents, ";"))
-        continue;
-      v = ore_eval(ore, t->children[i]);
-      if (ore->err != ORE_ERROR_NONE)
-        return v;
+  case ORE_TAG_FOR_IN:
+    {
+      ore_value l = ore_eval(ore, t->children[4]);
+      if (l.t != ORE_TYPE_ARRAY) {
+        fprintf(stderr, "expected array for argument\n");
+        ore->err = ORE_ERROR_EXCEPTION;
+      }
+      ore_array_t* a = (ore_array_t*) l.v.a->p;
+      ore_array_iter_t *k;
+      ore_context* env = ore_new(ore);
+      for (k = kl_begin(a); k != kl_end(a); k = kl_next(k)) {
+        ore_define(env, t->children[2]->contents, kl_val(k));
+        ore_eval(env, ore_find_statements(t));
+        if (env->err != ORE_ERROR_NONE) {
+          if (env->err == ORE_ERROR_CONTINUE) {
+            env->err = ORE_ERROR_NONE;
+            continue;
+          }
+          break;
+        }
+      }
+      if (env->err == ORE_ERROR_RETURN)
+        ore->err = ORE_ERROR_RETURN;
+      ore_destroy(env);
+      return ore_value_nil();
     }
-    return v;
-  }
-  if (is_a(t, "stmt")) {
+  case ORE_TAG_STMTS:
+    {
+      ore_value v = ore_value_nil();
+      for (i = 0; i < t->children_num; i++) {
+        if (is_a(t->children[i], "char") && !strcmp(t->children[i]->contents, ";"))
+          continue;
+        v = ore_eval(ore, t->children[i]);
+        if (ore->err != ORE_ERROR_NONE)
+          return v;
+      }
+      return v;
+    }
+  case ORE_TAG_STMT:
     return ore_eval(ore, t->children[0]);
-  }
-  if (is_a(t, "char") && !strcmp(t->contents, ";")) {
+  case ORE_TAG_SEMI:
+    return ore_value_nil();
+  default:
+    fprintf(stderr, "unknown operation '%s'\n", t->contents);
+    ore->err = ORE_ERROR_EXCEPTION;
     return ore_value_nil();
   }
-  fprintf(stderr, "unknown operation '%s'\n", t->contents);
-  ore->err = ORE_ERROR_EXCEPTION;
-  return ore_value_nil();
 }
 
 ore_context*
@@ -1709,10 +1776,17 @@ ore_new(ore_context* parent) {
     return NULL;
   }
   ore->env = kh_init(value);
-  ore->ct = kh_init(value);
   ore->err = ORE_ERROR_NONE;
   ore->parent = parent;
-  ore->ast = kh_init(ast);
+  if (parent) {
+    ore_context* root = parent;
+    while (root->parent) root = root->parent;
+    ore->ast = root->ast;
+    ore->tags = root->tags;
+  } else {
+    ore->ast = kh_init(ast);
+    ore->tags = kh_init(tag);
+  }
   return ore;
 }
 
@@ -1725,7 +1799,10 @@ ore_new(ore_context* parent) {
 void
 ore_destroy(ore_context* ore) {
   kh_destroy(value, ore->env);
-  kh_destroy(ast, ore->ast);
+  if (!ore->parent) {
+    kh_destroy(ast, ore->ast);
+    kh_destroy(tag, ore->tags);
+  }
   free(ore);
 }
 
