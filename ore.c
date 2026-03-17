@@ -1146,11 +1146,13 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
   } else if (is_a(t->children[0], "prop")) {
     pfn = t->children[0]->children[2]->contents;
     fn = ore_eval(ore, t->children[0]);
+    if (ore->err != ORE_ERROR_NONE)
+      return ore_value_nil();
     if (fn.t == ORE_TYPE_NIL) {
       // FIXME
       ore_context* tmp = ore;
       ore_value inst = ore_eval(tmp, t->children[0]->children[0]);
-      while (1) {
+      while (inst.t == ORE_TYPE_OBJECT) {
         inst = ore_prop(inst.v.o->e, "super");
         if (inst.t == ORE_TYPE_NIL)
           break;
@@ -1190,6 +1192,10 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
         }
         for (i = 2; i < t->children_num - 1; i += 2) {
           args[n++] = ore_eval(ore, t->children[i]);
+          if (ore->err != ORE_ERROR_NONE) {
+            free(args);
+            return ore_value_nil();
+          }
         }
         v = ((ore_cfunc_t)fn.v.f.x.c) ((ore_context*) ore, num_in, args, fn.v.f.u);
         free(args);
@@ -1377,9 +1383,13 @@ static ore_value
 ore_expr(ore_context* ore, mpc_ast_t* t) {
   int i;
   ore_value lhs = ore_eval(ore, t->children[0]);
+  if (ore->err != ORE_ERROR_NONE)
+    return ore_value_nil();
   for (i = 1; i < t->children_num; i += 2) {
     char* op = t->children[i]->contents;
     ore_value rhs = ore_eval(ore, t->children[i+1]);
+    if (ore->err != ORE_ERROR_NONE)
+      return ore_value_nil();
     lhs = ore_expr0(ore, lhs, op, rhs);
   }
   return lhs;
@@ -1524,6 +1534,8 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
       ore_array_t* a = kl_init(value);
       for (i = 1; i < t->children_num - 1; i += 2) {
         *kl_pushp(value, a) = ore_eval(ore, t->children[i]);
+        if (ore->err != ORE_ERROR_NONE)
+          return ore_value_nil();
       }
       return ore_value_array_from_klist(ore, a);
     }
@@ -1532,7 +1544,11 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
       ore_hash_t* h = kh_init(value);
       for (i = 1; i < t->children_num - 1; i += 2) {
         ore_value key = ore_eval(ore, t->children[i]->children[0]);
+        if (ore->err != ORE_ERROR_NONE)
+          return ore_value_nil();
         ore_value val = ore_eval(ore, t->children[i]->children[2]);
+        if (ore->err != ORE_ERROR_NONE)
+          return ore_value_nil();
         khint_t k = kh_put(value, h, key.v.s->p, &r);
         kh_value(h, k) = val;
       }
@@ -1549,6 +1565,8 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   case ORE_TAG_ITEM:
     {
       ore_value v = ore_eval(ore, t->children[0]);
+      if (ore->err != ORE_ERROR_NONE)
+        return ore_value_nil();
       for (i = 2; i < t->children_num; i += 3) {
         ore_value key = ore_eval(ore, t->children[i]);
         ore_value* r = ore_index_ref(ore, v, key, 0);
@@ -1559,6 +1577,8 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   case ORE_TAG_PROP:
     {
       ore_value v = ore_eval(ore, t->children[0]);
+      if (ore->err != ORE_ERROR_NONE)
+        return ore_value_nil();
       ore_context* this = v.t == ORE_TYPE_OBJECT ? (ore_context*) v.v.o->e : NULL;
       for (i = 2; i < t->children_num; i += 2) {
         if (v.t != ORE_TYPE_OBJECT) {
@@ -1576,7 +1596,11 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   case ORE_TAG_CMP:
     {
       ore_value lhs = ore_eval(ore, t->children[0]);
+      if (ore->err != ORE_ERROR_NONE)
+        return ore_value_nil();
       ore_value rhs = ore_eval(ore, t->children[2]);
+      if (ore->err != ORE_ERROR_NONE)
+        return ore_value_nil();
       return ore_cmp(ore, lhs, t->children[1]->contents, rhs);
     }
   case ORE_TAG_CALL:
@@ -1601,6 +1625,8 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     {
       const char* op = t->children[1]->contents;
       ore_value rhs = ore_eval(ore, t->children[2]);
+      if (ore->err != ORE_ERROR_NONE)
+        return ore_value_nil();
       ore_value lhs = *op != '=' ?
         ore_expr0(ore, ore_eval(ore, t->children[0]), op, rhs) : rhs;
       ore_set(ore, t->children[0]->contents, lhs);
@@ -1609,6 +1635,8 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   case ORE_TAG_LET_A:
     {
       ore_value lhs = ore_eval(ore, t->children[0]->children[0]);
+      if (ore->err != ORE_ERROR_NONE)
+        return ore_value_nil();
       const char* op = t->children[1]->contents;
       ore_value* r = NULL;
       for (i = 2; i < t->children[0]->children_num - 1; i += 3) {
@@ -1628,6 +1656,8 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   case ORE_TAG_LET_P:
     {
       ore_value lhs = ore_eval(ore, t->children[0]->children[0]);
+      if (ore->err != ORE_ERROR_NONE)
+        return ore_value_nil();
       const char* op = t->children[1]->contents;
       ore_value* r = NULL;
       for (i = 2; i < t->children[0]->children_num; i += 2) {
@@ -1647,6 +1677,8 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   case ORE_TAG_VAR:
     {
       ore_value v = ore_eval(ore, t->children[3]);
+      if (ore->err != ORE_ERROR_NONE)
+        return ore_value_nil();
       ore_define(ore, t->children[1]->contents, v);
       return v;
     }
