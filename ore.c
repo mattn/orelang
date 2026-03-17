@@ -20,7 +20,7 @@ extern char **environ;
 "           | <call>                                                     \n" \
 "           | <new>                                                      \n" \
 "           | <ident> ;                                                  \n" \
-"string     : /\"(\\\\.|[^\"])*\"/ ;                                     \n" \
+"string     : /\"(\\\\.|[^\"])*\"/ | /'(\\\\.|[^'])*'/ ;                  \n" \
 "regexp     : /\\/(\\\\.|[^\\/])*\\// ;                                  \n" \
 "item       : <factor> ('[' <lexp> ']')+ ;                               \n" \
 "prop       : <factor> ('.' <ident>)+ ;                                  \n" \
@@ -944,6 +944,265 @@ ore_cfunc_println(ore_context* ore, int num_in, ore_value* args, void* u) {
   ore_cfunc_print(ore, num_in, args, NULL);
   puts("");
   return ore_value_nil();
+}
+
+static void
+ore_value_to_json(ore_context* ore, ore_value v, kstring_t* ks) {
+  switch (v.t) {
+    case ORE_TYPE_NIL:
+      kputs("null", ks);
+      break;
+    case ORE_TYPE_BOOL:
+      kputs(v.v.b ? "true" : "false", ks);
+      break;
+    case ORE_TYPE_INT:
+      ksprintf(ks, "%d", v.v.i);
+      break;
+    case ORE_TYPE_FLOAT:
+      ksprintf(ks, "%g", v.v.d);
+      break;
+    case ORE_TYPE_STRING:
+      {
+        const char* p = v.v.s->p;
+        kputc('"', ks);
+        while (*p) {
+          switch (*p) {
+            case '"': kputs("\\\"", ks); break;
+            case '\\': kputs("\\\\", ks); break;
+            case '\b': kputs("\\b", ks); break;
+            case '\f': kputs("\\f", ks); break;
+            case '\n': kputs("\\n", ks); break;
+            case '\r': kputs("\\r", ks); break;
+            case '\t': kputs("\\t", ks); break;
+            default:
+              if ((unsigned char)*p < 0x20) {
+                ksprintf(ks, "\\u%04x", (unsigned char)*p);
+              } else {
+                kputc(*p, ks);
+              }
+          }
+          p++;
+        }
+        kputc('"', ks);
+      }
+      break;
+    case ORE_TYPE_ARRAY:
+      {
+        ore_array_t* a = (ore_array_t*) v.v.a->p;
+        ore_array_iter_t* k;
+        ore_array_iter_t* b = kl_begin(a);
+        kputc('[', ks);
+        for (k = b; k != kl_end(a); k = kl_next(k)) {
+          if (k != b) kputc(',', ks);
+          ore_value_to_json(ore, kl_val(k), ks);
+        }
+        kputc(']', ks);
+      }
+      break;
+    case ORE_TYPE_HASH:
+      {
+        ore_hash_t* h = (ore_hash_t*) v.v.h->p;
+        ore_hash_iter_t k;
+        int n = 0;
+        kputc('{', ks);
+        for (k = kh_begin(h); k != kh_end(h); k++) {
+          if (!kh_exist(h, k)) continue;
+          if (n > 0) kputc(',', ks);
+          /* key as JSON string */
+          kputc('"', ks);
+          const char* key = kh_key(h, k);
+          while (*key) {
+            if (*key == '"') kputs("\\\"", ks);
+            else if (*key == '\\') kputs("\\\\", ks);
+            else kputc(*key, ks);
+            key++;
+          }
+          kputc('"', ks);
+          kputc(':', ks);
+          ore_value_to_json(ore, kh_val(h, k), ks);
+          n++;
+        }
+        kputc('}', ks);
+      }
+      break;
+    default:
+      kputs("null", ks);
+      break;
+  }
+}
+
+static ore_value
+ore_cfunc_json_encode(ore_context* ore, int num_in, ore_value* args, void* u) {
+  kstring_t ks = { 0, 0, NULL };
+  ore_value_to_json(ore, args[0], &ks);
+  return ore_value_str_from_ptr(ore, ks.s, ks.l);
+}
+
+static void
+json_skip_ws(const char** pp) {
+  while (**pp == ' ' || **pp == '\t' || **pp == '\n' || **pp == '\r') (*pp)++;
+}
+
+static ore_value json_parse_value(ore_context* ore, const char** pp);
+
+static ore_value
+json_parse_string(ore_context* ore, const char** pp) {
+  const char* p = *pp;
+  if (*p != '"') {
+    fprintf(stderr, "json_decode: expected '\"'\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  p++;
+  kstring_t ks = { 0, 0, NULL };
+  while (*p && *p != '"') {
+    if (*p == '\\') {
+      p++;
+      switch (*p) {
+        case '"': kputc('"', &ks); break;
+        case '\\': kputc('\\', &ks); break;
+        case '/': kputc('/', &ks); break;
+        case 'b': kputc('\b', &ks); break;
+        case 'f': kputc('\f', &ks); break;
+        case 'n': kputc('\n', &ks); break;
+        case 'r': kputc('\r', &ks); break;
+        case 't': kputc('\t', &ks); break;
+        case 'u':
+          {
+            unsigned int cp = 0;
+            int i;
+            for (i = 0; i < 4 && p[1]; i++) {
+              p++;
+              cp <<= 4;
+              if (*p >= '0' && *p <= '9') cp |= *p - '0';
+              else if (*p >= 'a' && *p <= 'f') cp |= *p - 'a' + 10;
+              else if (*p >= 'A' && *p <= 'F') cp |= *p - 'A' + 10;
+            }
+            if (cp < 0x80) {
+              kputc(cp, &ks);
+            } else if (cp < 0x800) {
+              kputc(0xc0 | (cp >> 6), &ks);
+              kputc(0x80 | (cp & 0x3f), &ks);
+            } else {
+              kputc(0xe0 | (cp >> 12), &ks);
+              kputc(0x80 | ((cp >> 6) & 0x3f), &ks);
+              kputc(0x80 | (cp & 0x3f), &ks);
+            }
+          }
+          break;
+        default: kputc(*p, &ks); break;
+      }
+    } else {
+      kputc(*p, &ks);
+    }
+    p++;
+  }
+  if (*p == '"') p++;
+  *pp = p;
+  if (ks.s == NULL) {
+    char* empty = calloc(1, 1);
+    return ore_value_str_from_ptr(ore, empty, 0);
+  }
+  return ore_value_str_from_ptr(ore, ks.s, ks.l);
+}
+
+static ore_value
+json_parse_number(ore_context* ore, const char** pp) {
+  const char* p = *pp;
+  const char* start = p;
+  int is_float = 0;
+  if (*p == '-') p++;
+  while (*p >= '0' && *p <= '9') p++;
+  if (*p == '.') { is_float = 1; p++; while (*p >= '0' && *p <= '9') p++; }
+  if (*p == 'e' || *p == 'E') { is_float = 1; p++; if (*p == '+' || *p == '-') p++; while (*p >= '0' && *p <= '9') p++; }
+  *pp = p;
+  if (is_float) {
+    ore_value v = { ORE_TYPE_FLOAT };
+    v.v.d = strtod(start, NULL);
+    return v;
+  } else {
+    ore_value v = { ORE_TYPE_INT };
+    v.v.i = (int) strtol(start, NULL, 10);
+    return v;
+  }
+}
+
+static ore_value
+json_parse_array(ore_context* ore, const char** pp) {
+  const char* p = *pp;
+  p++; /* skip '[' */
+  ore_array_t* a = kl_init(value);
+  json_skip_ws(&p);
+  if (*p != ']') {
+    for (;;) {
+      json_skip_ws(&p);
+      ore_value elem = json_parse_value(ore, &p);
+      if (ore->err) { *pp = p; return ore_value_nil(); }
+      *kl_pushp(value, a) = elem;
+      json_skip_ws(&p);
+      if (*p == ',') { p++; continue; }
+      break;
+    }
+  }
+  if (*p == ']') p++;
+  *pp = p;
+  return ore_value_array_from_klist(ore, a);
+}
+
+static ore_value
+json_parse_object(ore_context* ore, const char** pp) {
+  const char* p = *pp;
+  p++; /* skip '{' */
+  ore_hash_t* h = kh_init(value);
+  json_skip_ws(&p);
+  if (*p != '}') {
+    for (;;) {
+      json_skip_ws(&p);
+      ore_value key = json_parse_string(ore, &p);
+      if (ore->err) { *pp = p; return ore_value_nil(); }
+      json_skip_ws(&p);
+      if (*p == ':') p++;
+      json_skip_ws(&p);
+      ore_value val = json_parse_value(ore, &p);
+      if (ore->err) { *pp = p; return ore_value_nil(); }
+      int r = 0;
+      khint_t k = kh_put(value, h, key.v.s->p, &r);
+      kh_value(h, k) = val;
+      json_skip_ws(&p);
+      if (*p == ',') { p++; continue; }
+      break;
+    }
+  }
+  if (*p == '}') p++;
+  *pp = p;
+  return ore_value_hash_from_khash(ore, h);
+}
+
+static ore_value
+json_parse_value(ore_context* ore, const char** pp) {
+  json_skip_ws(pp);
+  const char* p = *pp;
+  if (*p == '"') return json_parse_string(ore, pp);
+  if (*p == '[') return json_parse_array(ore, pp);
+  if (*p == '{') return json_parse_object(ore, pp);
+  if (*p == 't' && strncmp(p, "true", 4) == 0) { *pp = p + 4; return ore_value_true(); }
+  if (*p == 'f' && strncmp(p, "false", 5) == 0) { *pp = p + 5; return ore_value_false(); }
+  if (*p == 'n' && strncmp(p, "null", 4) == 0) { *pp = p + 4; return ore_value_nil(); }
+  if (*p == '-' || (*p >= '0' && *p <= '9')) return json_parse_number(ore, pp);
+  fprintf(stderr, "json_decode: unexpected character '%c'\n", *p);
+  ore->err = ORE_ERROR_EXCEPTION;
+  return ore_value_nil();
+}
+
+static ore_value
+ore_cfunc_json_decode(ore_context* ore, int num_in, ore_value* args, void* u) {
+  if (args[0].t != ORE_TYPE_STRING) {
+    fprintf(stderr, "json_decode: argument should be string\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  const char* p = args[0].v.s->p;
+  return json_parse_value(ore, &p);
 }
 
 static ore_value
@@ -1987,6 +2246,8 @@ m_program
   ore_define_cfunc(ore, "load", 1, 1, ore_cfunc_load, &pc);
   ore_define_cfunc(ore, "environ", 0, 1, ore_cfunc_environ, &pc);
   ore_define_cfunc(ore, "exit", 1, 1, ore_cfunc_exit, NULL);
+  ore_define_cfunc(ore, "json_encode", 1, 1, ore_cfunc_json_encode, NULL);
+  ore_define_cfunc(ore, "json_decode", 1, 1, ore_cfunc_json_decode, NULL);
   ore_array_t* args = kl_init(value);
   int i;
   for (i = f+1; i < argc; i++) {
