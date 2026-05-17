@@ -1,6 +1,10 @@
 #include "ore.h"
 
+#ifdef _WIN32
+#include <stdlib.h>
+#else
 extern char **environ;
+#endif
 
 #define STRUCTURE \
 "                                                                        \n" \
