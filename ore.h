@@ -56,10 +56,13 @@ typedef struct _ore_func {
   void* ore;
   int num_in;
   int max_in;
+  int args_begin;
+  int args_end;
   union {
     void* c;
     void* o;
   } x;
+  void* body;
   void* u;
 } ore_func;
 

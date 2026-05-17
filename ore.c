@@ -155,6 +155,45 @@ KHASH_MAP_INIT_STR(cfunc, ore_cfunc_t)
 static ore_value ore_call(ore_context*, mpc_ast_t*);
 static ore_value ore_eval(ore_context*, mpc_ast_t*);
 
+static void
+ore_init_func(ore_func* fn, ore_context* ore, mpc_ast_t* t) {
+  int i;
+  int argc = 0;
+  int vararg = 0;
+
+  fn->ore = ore;
+  fn->num_in = 0;
+  fn->max_in = 0;
+  fn->args_begin = -1;
+  fn->args_end = -1;
+  fn->x.o = t;
+  fn->body = NULL;
+  fn->u = NULL;
+
+  for (i = 0; i < t->children_num; i++) {
+    mpc_ast_t* child = t->children[i];
+    if (is_a(child, "char")) {
+      if (child->contents[0] == '(') {
+        fn->args_begin = i + 1;
+      } else if (child->contents[0] == ')') {
+        fn->args_end = i;
+      } else if (child->contents[0] == '{') {
+        if (i + 1 < t->children_num && t->children[i + 1]->contents[0] != '}')
+          fn->body = t->children[i + 1];
+        break;
+      }
+      continue;
+    }
+    if (fn->args_begin >= 0 && fn->args_end < 0) {
+      if (is_a(child, "ident")) argc++;
+      else if (is_a(child, "vararg")) vararg = 1;
+    }
+  }
+
+  fn->num_in = argc;
+  fn->max_in = vararg ? -1 : argc;
+}
+
 int verbose = 0;
 
 static const char*
@@ -369,11 +408,8 @@ ore_is_true(ore_value v) {
       return v.v.s->l > 0;
     case ORE_TYPE_ARRAY:
       {
-        int n = 0;
         ore_array_t* a = (ore_array_t*) v.v.a->p;
-        ore_array_iter_t *k;
-        for (k = kl_begin(a); k != kl_end(a); k = kl_next(k)) n++;
-        return n > 0;
+        return a->size > 0;
       }
     case ORE_TYPE_HASH:
       {
@@ -503,35 +539,16 @@ ore_bind_args(ore_context* ore, mpc_ast_t* f, ore_context* this, mpc_ast_t* t) {
   for (i = 0; i < num_in; i++) {
     args[i] = ore_value_nil();
   }
-  i = 0;
-  for (i = 0; i < t->children_num; i++) {
-    if (is_a(t->children[i], "char") && t->children[i]->contents[0] == '(') {
-      i++;
-      break;
-    }
-  }
-  for (; i < t->children_num; i++) {
-    if (is_a(t->children[i], "char")) {
-      if (t->children[i]->contents[0] == ')') {
-        i++;
-        break;
-      }
-    } else
-      args[n++] = ore_eval(ore, t->children[i]);
+  for (i = 2; i < t->children_num - 1; i += 2) {
+    args[n++] = ore_eval(ore, t->children[i]);
+    if (ore->err != ORE_ERROR_NONE)
+      return args;
   }
 
-  for (i = 0; i < f->children_num; i++) {
-    if (is_a(f->children[i], "char") && f->children[i]->contents[0] == '(') {
-      i++;
-      break;
-    }
-  }
+  ore_func fn;
+  ore_init_func(&fn, NULL, f);
   n = 0;
-  for (; i < f->children_num; i++) {
-    if (is_a(f->children[i], "char") && f->children[i]->contents[0] == ')') {
-      i++;
-      break;
-    }
+  for (i = fn.args_begin; i >= 0 && i < fn.args_end; i++) {
     if (is_a(f->children[i], "vararg")) {
       ore_array_t* a = kl_init(value);
       int j;
@@ -723,10 +740,7 @@ ore_cfunc_len(ore_context* ore, int num_in, ore_value* args, void* u) {
     case ORE_TYPE_ARRAY:
       {
         ore_array_t* a = (ore_array_t*) args[0].v.a->p;
-        ore_array_iter_t *k;
-        int n = 0;
-        for (k = kl_begin(a); k != kl_end(a); k = kl_next(k)) n++;
-        v.v.i = n;
+        v.v.i = a->size;
       }
       return v;
     default:
@@ -1332,7 +1346,10 @@ orex_define_method(ore_context* ore, ore_value clazz, const char* name, int num_
   v.v.f.ore = clazz.v.x->e;
   v.v.f.num_in = num_in;
   v.v.f.max_in = max_in;
+  v.v.f.args_begin = -1;
+  v.v.f.args_end = -1;
   v.v.f.x.c = c;
+  v.v.f.body = NULL;
   v.v.f.u = u;
   ore_define(clazz.v.x->e, name, v);
 }
@@ -1343,7 +1360,10 @@ ore_define_cfunc(ore_context* ore, const char* name, int num_in, int max_in, ore
   v.v.f.ore = ore;
   v.v.f.num_in = num_in;
   v.v.f.max_in = max_in;
+  v.v.f.args_begin = -1;
+  v.v.f.args_end = -1;
   v.v.f.x.c = c;
+  v.v.f.body = NULL;
   v.v.f.u = u;
   ore_define(ore, name, v);
 }
@@ -1360,10 +1380,9 @@ ore_func_call(ore_context* ore, ore_value fn, int num_in, ore_value* args) {
   }
 
   ore_context* env = ore_new((ore_context*) fn.v.f.ore);
-  mpc_ast_t* stmts = NULL;
   mpc_ast_t* f = fn.v.f.x.o;
   int n = 0, i;
-  for (i = 2; i < f->children_num; i++) {
+  for (i = fn.v.f.args_begin; i >= 0 && i < fn.v.f.args_end; i++) {
     if (is_a(f->children[i], "vararg")) {
       ore_array_t* a = kl_init(value);
       int j;
@@ -1374,21 +1393,11 @@ ore_func_call(ore_context* ore, ore_value fn, int num_in, ore_value* args) {
     } else if (is_a(f->children[i], "ident")) {
       if (n < num_in)
         ore_define(env, f->children[i]->contents, args[n++]);
-    } else if (is_a(f->children[i], "char")) {
-      if (f->children[i]->contents[0] == '{') {
-        i++;
-        break;
-      }
-    }
-  }
-  for (; i < f->children_num; i++) {
-    if (stmts == NULL && !is_a(f->children[i], "char")) {
-      stmts = f->children[i];
     }
   }
   ore_value v = ore_value_nil();
-  if (stmts) {
-    v = ore_eval(env, stmts);
+  if (fn.v.f.body) {
+    v = ore_eval(env, fn.v.f.body);
     if (env->err == ORE_ERROR_EXCEPTION)
       ore->err = env->err;
   }
@@ -1463,10 +1472,10 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
     case ORE_TYPE_FUNC:
       {
         ore_context* env = ore_new((ore_context*) fn.v.f.ore);
-        mpc_ast_t* stmts = ore_find_statements(fn.v.f.x.o);
-        if (stmts) {
+        if (fn.v.f.body) {
           ore_value* args = ore_bind_args(ore, fn.v.f.x.o, env, t);
-          v = ore_eval(env, stmts);
+          if (ore->err == ORE_ERROR_NONE)
+            v = ore_eval(env, fn.v.f.body);
           if (env->err == ORE_ERROR_EXCEPTION)
             ore->err = env->err;
           free(args);
@@ -1869,11 +1878,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   case ORE_TAG_LAMBDA:
     {
       ore_value v = { ORE_TYPE_FUNC };
-      v.v.f.ore = ore;
-      v.v.f.num_in = -1;
-      v.v.f.max_in = -1;
-      v.v.f.x.o = t;
-      v.v.f.u = NULL;
+      ore_init_func(&v.v.f, ore, t);
       return v;
     }
   case ORE_TAG_FACTOR:
@@ -1944,11 +1949,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   case ORE_TAG_FUNC:
     {
       ore_value v = { ORE_TYPE_FUNC };
-      v.v.f.ore = ore;
-      v.v.f.num_in = -1;
-      v.v.f.max_in = -1;
-      v.v.f.x.o = t;
-      v.v.f.u = NULL;
+      ore_init_func(&v.v.f, ore, t);
       ore_define(ore, t->children[1]->contents, v);
       return v;
     }
