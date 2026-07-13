@@ -1762,7 +1762,7 @@ ore_cmp(ore_context* ore, ore_value lhs, char* op, ore_value rhs) {
   if (!strcmp(op, "<")) return ore_cmp_lessmore(ore, lhs, rhs) < 0 ? ore_value_true() : ore_value_false();
   if (!strcmp(op, "<=")) return ore_cmp_lessmore(ore, lhs, rhs) <= 0 ? ore_value_true() : ore_value_false();
   if (!strcmp(op, ">")) return ore_cmp_lessmore(ore, lhs, rhs) > 0 ? ore_value_true() : ore_value_false();
-  if (!strcmp(op, "<=")) return ore_cmp_lessmore(ore, lhs, rhs) >= 0 ? ore_value_true() : ore_value_false();
+  if (!strcmp(op, ">=")) return ore_cmp_lessmore(ore, lhs, rhs) >= 0 ? ore_value_true() : ore_value_false();
   if (!strcmp(op, "=~")) return ore_match_regexp(ore, lhs, rhs);
   return ore_value_false();
 }
