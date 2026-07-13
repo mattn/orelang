@@ -1,0 +1,11 @@
+h = {"x": 1};
+is(1, h["x"], "hash lookup");
+is(nil, h["y"], "missing hash key is nil");
+
+h["x"] = 2;
+is(2, h["x"], "hash update");
+
+h["z"] = 3;
+is(3, h["z"], "hash insert");
+
+# vim: set ft=ore:

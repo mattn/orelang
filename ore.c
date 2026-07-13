@@ -1530,15 +1530,15 @@ ore_index_ref(ore_context* ore, ore_value v, ore_value e, int update) {
     if (update) {
       int r = 0;
       khint_t k = kh_get(value, h, e.v.s->p);
-      if (k != kh_end(ore->env)) {
-        ore_value old = kh_value(ore->env, k);
+      if (k != kh_end(h)) {
+        ore_value old = kh_value(h, k);
         ore_value_unref(old);
       }
       k = kh_put(value, h, e.v.s->p, &r);
       return &kh_value(h, k);
     } else {
       khint_t k = kh_get(value, h, e.v.s->p);
-      if (k != kh_end(ore->env)) {
+      if (k != kh_end(h)) {
         return &kh_value(h, k);
       }
     }
@@ -1549,15 +1549,15 @@ ore_index_ref(ore_context* ore, ore_value v, ore_value e, int update) {
     if (update) {
       int r = 0;
       khint_t k = kh_get(value, this->env, e.v.s->p);
-      if (k != kh_end(ore->env)) {
-        ore_value old = kh_value(ore->env, k);
+      if (k != kh_end(this->env)) {
+        ore_value old = kh_value(this->env, k);
         ore_value_unref(old);
       }
       k = kh_put(value, this->env, e.v.s->p, &r);
       return &kh_value(this->env, k);
     } else {
       khint_t k = kh_get(value, this->env, e.v.s->p);
-      if (k != kh_end(ore->env)) {
+      if (k != kh_end(this->env)) {
         return &kh_value(this->env, k);
       }
     }
