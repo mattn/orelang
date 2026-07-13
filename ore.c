@@ -1741,14 +1741,13 @@ ore_match_regexp(ore_context* ore, ore_value lhs, ore_value rhs) {
 
 static int
 ore_cmp_lessmore(ore_context* ore, ore_value lhs, ore_value rhs) {
-  if (lhs.t != rhs.t) return 0;
-  switch (lhs.t) {
-    case ORE_TYPE_INT:
-      return lhs.v.i - rhs.v.i;
-    case ORE_TYPE_FLOAT:
-      return lhs.v.d - rhs.v.d;
-    default:
-      break;
+  if (lhs.t == ORE_TYPE_INT && rhs.t == ORE_TYPE_INT)
+    return lhs.v.i < rhs.v.i ? -1 : lhs.v.i > rhs.v.i ? 1 : 0;
+  if ((lhs.t == ORE_TYPE_INT || lhs.t == ORE_TYPE_FLOAT) &&
+      (rhs.t == ORE_TYPE_INT || rhs.t == ORE_TYPE_FLOAT)) {
+    double l = lhs.t == ORE_TYPE_INT ? (double) lhs.v.i : lhs.v.d;
+    double r = rhs.t == ORE_TYPE_INT ? (double) rhs.v.i : rhs.v.d;
+    return l < r ? -1 : l > r ? 1 : 0;
   }
   fprintf(stderr, "invalid operator\n");
   ore->err = ORE_ERROR_EXCEPTION;
