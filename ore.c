@@ -816,7 +816,12 @@ ore_cfunc_load(ore_context* ore, int num_in, ore_value* args, void* u) {
 
 static ore_value
 ore_cfunc_environ(ore_context* ore, int num_in, ore_value* args, void* u) {
-  if (num_in == 1 && args[0].v.s->p) {
+  if (num_in == 1) {
+    if (args[0].t != ORE_TYPE_STRING || !args[0].v.s->p) {
+      fprintf(stderr, "argument should be string\n");
+      ore->err = ORE_ERROR_EXCEPTION;
+      return ore_value_nil();
+    }
     return ore_value_str_from_ptr(ore, (char*) getenv(args[0].v.s->p), -1);
   } else {
     int i;
