@@ -2021,6 +2021,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
       if (l.t != ORE_TYPE_ARRAY) {
         fprintf(stderr, "expected array for argument\n");
         ore->err = ORE_ERROR_EXCEPTION;
+        return ore_value_nil();
       }
       ore_array_t* a = (ore_array_t*) l.v.a->p;
       ore_array_iter_t *k;
