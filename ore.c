@@ -453,10 +453,11 @@ ore_err_print(mpc_err_t* err) {
 static ore_value
 ore_parse_num(ore_context* ore, const char* s) {
   ore_value v = {0};
-  if (*s == '0' && *(s+1) == 'x') {
+  const char* p = *s == '-' ? s + 1 : s;
+  if (*p == '0' && *(p+1) == 'x') {
     v.t = ORE_TYPE_INT;
     v.v.i = strtol(s, NULL, 16);
-  } else if (!strchr(s, '.')) {
+  } else if (!strchr(s, '.') && !strchr(s, 'e')) {
     v.t = ORE_TYPE_INT;
     v.v.i = atoi(s);
   } else {
