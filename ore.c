@@ -1618,12 +1618,12 @@ ore_expr0(ore_context* ore, ore_value lhs, const char* op, ore_value rhs) {
       break;
     case ORE_TYPE_STRING:
       {
-        char buf[32], *p = buf;
+        char buf[512], *p = buf;
         if (*op == '+') {
           if (rhs.t == ORE_TYPE_INT)
-            sprintf(buf, "%i", rhs.v.i);
+            snprintf(buf, sizeof(buf), "%i", rhs.v.i);
           else if (rhs.t == ORE_TYPE_FLOAT)
-            sprintf(buf, "%f", rhs.v.d);
+            snprintf(buf, sizeof(buf), "%f", rhs.v.d);
           else if (rhs.t == ORE_TYPE_STRING)
             p = rhs.v.s->p;
           else {
