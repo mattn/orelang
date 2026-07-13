@@ -2301,7 +2301,7 @@ m_program
   ore_destroy(ore);
 
 leave:
-  mpc_cleanup(44, NODES);
+  mpc_cleanup(46, NODES);
   return 0;
 }
 
