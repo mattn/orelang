@@ -1514,10 +1514,6 @@ ore_index_ref(ore_context* ore, ore_value v, ore_value e, int update) {
     ore_array_iter_t* k;
     for (k = kl_begin(a); k != kl_end(a); k = kl_next(k)) {
       if (n == e.v.i) {
-        if (update) {
-          ore_value old = kl_val(k);
-          ore_value_unref(old);
-        }
         return &kl_val(k);
       }
       n++;
@@ -1535,12 +1531,8 @@ ore_index_ref(ore_context* ore, ore_value v, ore_value e, int update) {
     ore_hash_t* h = (ore_hash_t*) v.v.h->p;
     if (update) {
       int r = 0;
-      khint_t k = kh_get(value, h, e.v.s->p);
-      if (k != kh_end(h)) {
-        ore_value old = kh_value(h, k);
-        ore_value_unref(old);
-      }
-      k = kh_put(value, h, e.v.s->p, &r);
+      khint_t k = kh_put(value, h, e.v.s->p, &r);
+      if (r) kh_value(h, k) = ore_value_nil();
       return &kh_value(h, k);
     } else {
       khint_t k = kh_get(value, h, e.v.s->p);
@@ -1559,12 +1551,8 @@ ore_index_ref(ore_context* ore, ore_value v, ore_value e, int update) {
     ore_context* this = (ore_context*) v.v.o->e;
     if (update) {
       int r = 0;
-      khint_t k = kh_get(value, this->env, e.v.s->p);
-      if (k != kh_end(this->env)) {
-        ore_value old = kh_value(this->env, k);
-        ore_value_unref(old);
-      }
-      k = kh_put(value, this->env, e.v.s->p, &r);
+      khint_t k = kh_put(value, this->env, e.v.s->p, &r);
+      if (r) kh_value(this->env, k) = ore_value_nil();
       return &kh_value(this->env, k);
     } else {
       khint_t k = kh_get(value, this->env, e.v.s->p);
@@ -1942,8 +1930,15 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
         return ore_value_nil();
       }
       ore_value rhs = ore_eval(ore, t->children[2]);
-      if (*op != '=') lhs = ore_expr0(ore, lhs, op, rhs);
+      if (ore->err != ORE_ERROR_NONE)
+        return ore_value_nil();
+      if (*op != '=') {
+        rhs = ore_expr0(ore, lhs, op, rhs);
+        if (ore->err != ORE_ERROR_NONE)
+          return ore_value_nil();
+      }
       ore_value_ref(rhs);
+      ore_value_unref(lhs);
       *r = rhs;
       return rhs;
     }
@@ -1956,15 +1951,23 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
       ore_value* r = NULL;
       for (i = 2; i < t->children[0]->children_num; i += 2) {
         ore_value key = ore_value_str_from_ptr(ore, t->children[0]->children[i]->contents, -1);
-        r = ore_index_ref(ore, lhs, key, 0);
+        int last = i + 2 >= t->children[0]->children_num;
+        r = ore_index_ref(ore, lhs, key, last);
         lhs = r == NULL ? ore_value_nil() : *r;
       }
       if (r == NULL) {
         return ore_value_nil();
       }
       ore_value rhs = ore_eval(ore, t->children[2]);
-      if (*op != '=') lhs = ore_expr0(ore, lhs, op, rhs);
+      if (ore->err != ORE_ERROR_NONE)
+        return ore_value_nil();
+      if (*op != '=') {
+        rhs = ore_expr0(ore, lhs, op, rhs);
+        if (ore->err != ORE_ERROR_NONE)
+          return ore_value_nil();
+      }
       ore_value_ref(rhs);
+      ore_value_unref(lhs);
       *r = rhs;
       return rhs;
     }
