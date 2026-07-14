@@ -14,4 +14,18 @@ is(6, o.x, "prop compound assign");
 o.y = 7;
 is(7, o.y, "prop new field");
 
+class P {
+  var a = 0;
+  func __initialize__(x, y) {
+    this.a = x + y;
+  }
+  func get() {
+    return this.a;
+  }
+}
+
+p = new P(1, 2);
+is(3, p.a, "initialize args");
+is(3, p.get(), "method call");
+
 # vim: set ft=ore:
