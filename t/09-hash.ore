@@ -16,4 +16,12 @@ m = [[1,2],[3,4]];
 m[0][1] = 9;
 is(9, m[0][1], "nested array assign");
 
+c = {"n": 1};
+c["n"] += 1;
+is(2, c["n"], "hash compound assign");
+
+arr = [1,2,3];
+arr[0] += 10;
+is(11, arr[0], "array compound assign");
+
 # vim: set ft=ore:
