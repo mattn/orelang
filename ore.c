@@ -1551,6 +1551,11 @@ ore_index_ref(ore_context* ore, ore_value v, ore_value e, int update) {
     return NULL;
   }
   if (v.t == ORE_TYPE_OBJECT) {
+    if (e.t != ORE_TYPE_STRING) {
+      fprintf(stderr, "object index should be string\n");
+      ore->err = ORE_ERROR_EXCEPTION;
+      return NULL;
+    }
     ore_context* this = (ore_context*) v.v.o->e;
     if (update) {
       int r = 0;
