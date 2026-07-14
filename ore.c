@@ -2026,8 +2026,9 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   case ORE_TAG_WHILE:
     {
       ore_context* env = ore_new(ore);
+      ore_value v = ore_value_nil();
       while (ore_is_true(ore_eval(env, t->children[2]))) {
-        ore_eval(env, ore_find_statements(t));
+        v = ore_eval(env, ore_find_statements(t));
         if (env->err != ORE_ERROR_NONE) {
           if (env->err == ORE_ERROR_CONTINUE) {
             env->err = ORE_ERROR_NONE;
@@ -2036,8 +2037,11 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
           break;
         }
       }
-      if (env->err == ORE_ERROR_RETURN)
-        ore->err = ORE_ERROR_RETURN;
+      if (env->err == ORE_ERROR_RETURN || env->err == ORE_ERROR_EXCEPTION) {
+        ore->err = env->err;
+        ore_destroy(env);
+        return v;
+      }
       ore_destroy(env);
       return ore_value_nil();
     }
@@ -2052,9 +2056,10 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
       ore_array_t* a = (ore_array_t*) l.v.a->p;
       ore_array_iter_t *k;
       ore_context* env = ore_new(ore);
+      ore_value v = ore_value_nil();
       for (k = kl_begin(a); k != kl_end(a); k = kl_next(k)) {
         ore_define(env, t->children[2]->contents, kl_val(k));
-        ore_eval(env, ore_find_statements(t));
+        v = ore_eval(env, ore_find_statements(t));
         if (env->err != ORE_ERROR_NONE) {
           if (env->err == ORE_ERROR_CONTINUE) {
             env->err = ORE_ERROR_NONE;
@@ -2063,8 +2068,11 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
           break;
         }
       }
-      if (env->err == ORE_ERROR_RETURN)
-        ore->err = ORE_ERROR_RETURN;
+      if (env->err == ORE_ERROR_RETURN || env->err == ORE_ERROR_EXCEPTION) {
+        ore->err = env->err;
+        ore_destroy(env);
+        return v;
+      }
       ore_destroy(env);
       return ore_value_nil();
     }
