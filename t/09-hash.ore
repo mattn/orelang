@@ -8,4 +8,12 @@ is(2, h["x"], "hash update");
 h["z"] = 3;
 is(3, h["z"], "hash insert");
 
+n = {"a": {"b": 1}};
+n["a"]["b"] = 2;
+is(2, n["a"]["b"], "nested hash assign");
+
+m = [[1,2],[3,4]];
+m[0][1] = 9;
+is(9, m[0][1], "nested array assign");
+
 # vim: set ft=ore:
