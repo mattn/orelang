@@ -533,9 +533,24 @@ ore_find_statements(mpc_ast_t* t) {
   return NULL;
 }
 
+static int
+ore_call_args_begin(mpc_ast_t* t) {
+  int i;
+  for (i = 0; i < t->children_num; i++) {
+    if (is_a(t->children[i], "char") && t->children[i]->contents[0] == '(')
+      return i + 1;
+  }
+  return t->children_num;
+}
+
+static int
+ore_call_num_args(mpc_ast_t* t) {
+  return (t->children_num - ore_call_args_begin(t)) / 2;
+}
+
 static ore_value*
 ore_bind_args(ore_context* ore, mpc_ast_t* f, ore_context* this, mpc_ast_t* t) {
-  int num_in = t->children_num / 2 - 1, n = 0, i;
+  int num_in = ore_call_num_args(t), n = 0, i;
   ore_value* args = (ore_value*) malloc(sizeof(ore_value) * num_in);
   if (!args) {
     fprintf(stderr, "failed to allocate memory\n");
@@ -545,7 +560,7 @@ ore_bind_args(ore_context* ore, mpc_ast_t* f, ore_context* this, mpc_ast_t* t) {
   for (i = 0; i < num_in; i++) {
     args[i] = ore_value_nil();
   }
-  for (i = 2; i < t->children_num - 1; i += 2) {
+  for (i = ore_call_args_begin(t); i < t->children_num - 1; i += 2) {
     args[n++] = ore_eval(ore, t->children[i]);
     if (ore->err != ORE_ERROR_NONE)
       return args;
@@ -611,7 +626,9 @@ ore_object_new(ore_context* ore, mpc_ast_t* t) {
       ore_value initialize = ore_prop(v.v.o->e, "__initialize__");
       if (initialize.t == ORE_TYPE_FUNC) {
         ore_value* args = ore_bind_args(ore, initialize.v.f.x.o, v.v.o->e, t);
-        ore_func_call(v.v.o->e, initialize, t->children_num / 2 - 1, args);
+        if (ore->err == ORE_ERROR_NONE)
+          ore_func_call(v.v.o->e, initialize, ore_call_num_args(t), args);
+        free(args);
       }
       break;
     case ORE_TYPE_CCLASS:
