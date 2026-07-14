@@ -13,6 +13,28 @@ while (1) {
 }
 is(4, x, "for loop");
 
+func find3() {
+  for (a in [1,2,3,4,5]) {
+    if (a == 3) {
+      return a;
+    }
+  }
+  return -1;
+}
+is(3, find3(), "return from for");
+
+func find4() {
+  i = 0;
+  while (true) {
+    i = i + 1;
+    if (i == 4) {
+      return i;
+    }
+  }
+  return -1;
+}
+is(4, find4(), "return from while");
+
 #x = 0;
 #for a = 0; a < 10; a++ {
 #  x++;
