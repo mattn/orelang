@@ -29,9 +29,8 @@ extern char **environ;
 "regexp     : /\\/(\\\\.|[^\\/])*\\// ;                                  \n" \
 "item       : <factor> ('[' <lexp> ']')+ ;                               \n" \
 "prop       : <factor> ('.' <ident>)+ ;                                  \n" \
-"cmp        : <factor>                                                     " \
-"         (\"!=\" | \"==\" | \"<=\" | \"<\" | \">=\" | \">\" | \"=~\")     " \
-"         <factor> ;                                                     \n" \
+"postfix    : (<methodcall> | <item> | <prop> | <anoncall>                 " \
+"         | <call> | <factor>) ;                                         \n" \
 "call       : <ident> '(' <lexp>? (',' <lexp>)* ')' ;                    \n" \
 "anoncall   : <factor> '(' <lexp>? (',' <lexp>)* ')' ;                   \n" \
 "methodcall : <prop> '(' <lexp>? (',' <lexp>)* ')' ;                     \n" \
@@ -39,10 +38,10 @@ extern char **environ;
 "pair       : <string> ':' <lexp> ;                                      \n" \
 "hash       : '{' <pair>? (',' <pair>)* '}' ;                            \n" \
 "ident      : /[a-zA-Z_][a-zA-Z0-9_]*/ ;                                 \n" \
-"term       : (<lambda> | <item> | <methodcall> | <prop> | <cmp>           " \
-"         | <anoncall> | <call>                                            " \
-"         | <factor> (('*' | '/' | '%') <factor>)* ) ;                   \n" \
-"lexp       : <term> (('+' | '-') <term>)* ;                             \n" \
+"term       : (<lambda> | <postfix> (('*' | '/' | '%') <postfix>)*) ;    \n" \
+"arith      : <term> (('+' | '-') <term>)* ;                             \n" \
+"lexp       : <arith> ((\"!=\" | \"==\" | \"<=\" | \"<\" | \">=\"          " \
+"         | \">\" | \"=~\") <arith>)? ;                                  \n" \
 "let_o      : (\"=\" | \"+=\" | \"-=\" | \"*=\" | \"/=\") ;              \n" \
 "let_v      : <ident> <let_o> <lexp> ';' ;                               \n" \
 "let_a      : <item> <let_o> <lexp> ';' ;                                \n" \
@@ -83,7 +82,7 @@ enum {
   ORE_TAG_EOF, ORE_TAG_TRUE, ORE_TAG_FALSE, ORE_TAG_NIL,
   ORE_TAG_NUMBER, ORE_TAG_STRING, ORE_TAG_ARRAY, ORE_TAG_HASH,
   ORE_TAG_REGEXP, ORE_TAG_ITEM, ORE_TAG_PROP, ORE_TAG_IDENT,
-  ORE_TAG_CMP, ORE_TAG_CALL, ORE_TAG_NEW, ORE_TAG_LAMBDA,
+  ORE_TAG_CALL, ORE_TAG_NEW, ORE_TAG_LAMBDA,
   ORE_TAG_FACTOR, ORE_TAG_LEXP_TERM,
   ORE_TAG_LET_V, ORE_TAG_LET_A, ORE_TAG_LET_P,
   ORE_TAG_VAR, ORE_TAG_FUNC,
@@ -108,12 +107,11 @@ ore_classify_tag(mpc_ast_t* t) {
   if (is_a(t, "item")) return ORE_TAG_ITEM;
   if (is_a(t, "prop")) return ORE_TAG_PROP;
   if (is_a(t, "ident")) return ORE_TAG_IDENT;
-  if (is_a(t, "cmp")) return ORE_TAG_CMP;
   if (is_a(t, "call")) return ORE_TAG_CALL;
   if (is_a(t, "new")) return ORE_TAG_NEW;
   if (is_a(t, "lambda")) return ORE_TAG_LAMBDA;
   if (is_a(t, "factor")) return ORE_TAG_FACTOR;
-  if (is_a(t, "lexp") || is_a(t, "term")) return ORE_TAG_LEXP_TERM;
+  if (is_a(t, "lexp") || is_a(t, "term") || is_a(t, "arith")) return ORE_TAG_LEXP_TERM;
   if (is_a(t, "let_v")) return ORE_TAG_LET_V;
   if (is_a(t, "let_a")) return ORE_TAG_LET_A;
   if (is_a(t, "let_p")) return ORE_TAG_LET_P;
@@ -1682,6 +1680,16 @@ ore_expr0(ore_context* ore, ore_value lhs, const char* op, ore_value rhs) {
   return lhs;
 }
 
+static int
+ore_is_cmp_op(const char* op) {
+  return !strcmp(op, "==") || !strcmp(op, "!=") ||
+         !strcmp(op, "<") || !strcmp(op, "<=") ||
+         !strcmp(op, ">") || !strcmp(op, ">=") ||
+         !strcmp(op, "=~");
+}
+
+static ore_value ore_cmp(ore_context*, ore_value, char*, ore_value);
+
 static ore_value
 ore_expr(ore_context* ore, mpc_ast_t* t) {
   int i;
@@ -1693,7 +1701,10 @@ ore_expr(ore_context* ore, mpc_ast_t* t) {
     ore_value rhs = ore_eval(ore, t->children[i+1]);
     if (ore->err != ORE_ERROR_NONE)
       return ore_value_nil();
-    lhs = ore_expr0(ore, lhs, op, rhs);
+    if (ore_is_cmp_op(op))
+      lhs = ore_cmp(ore, lhs, op, rhs);
+    else
+      lhs = ore_expr0(ore, lhs, op, rhs);
   }
   return lhs;
 }
@@ -1895,16 +1906,6 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     }
   case ORE_TAG_IDENT:
     return ore_get(ore, t->contents);
-  case ORE_TAG_CMP:
-    {
-      ore_value lhs = ore_eval(ore, t->children[0]);
-      if (ore->err != ORE_ERROR_NONE)
-        return ore_value_nil();
-      ore_value rhs = ore_eval(ore, t->children[2]);
-      if (ore->err != ORE_ERROR_NONE)
-        return ore_value_nil();
-      return ore_cmp(ore, lhs, t->children[1]->contents, rhs);
-    }
   case ORE_TAG_CALL:
     return ore_call(ore, t);
   case ORE_TAG_NEW:
@@ -2198,8 +2199,9 @@ main(int argc, char **argv) {
   mpc_parser_t* m_hash       = mpc_new("hash");
   mpc_parser_t* m_regexp     = mpc_new("regexp");
   mpc_parser_t* m_ident      = mpc_new("ident");
-  mpc_parser_t* m_cmp        = mpc_new("cmp");
+  mpc_parser_t* m_postfix    = mpc_new("postfix");
   mpc_parser_t* m_term       = mpc_new("term");
+  mpc_parser_t* m_arith      = mpc_new("arith");
   mpc_parser_t* m_value      = mpc_new("value");
   mpc_parser_t* m_item       = mpc_new("item");
   mpc_parser_t* m_prop       = mpc_new("prop");
@@ -2246,8 +2248,9 @@ m_pair,\
 m_hash,\
 m_regexp,\
 m_ident,\
-m_cmp,\
+m_postfix,\
 m_term,\
+m_arith,\
 m_lexp,\
 m_value,\
 m_item,\
@@ -2356,7 +2359,7 @@ m_program
   ore_destroy(ore);
 
 leave:
-  mpc_cleanup(46, NODES);
+  mpc_cleanup(47, NODES);
   return 0;
 }
 
