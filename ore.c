@@ -1,4 +1,5 @@
 #include "ore.h"
+#include <math.h>
 
 #ifdef _WIN32
 #include <stdlib.h>
@@ -1588,8 +1589,15 @@ ore_expr0(ore_context* ore, ore_value lhs, const char* op, ore_value rhs) {
         if (*op == '+') { lhs.v.i += iv; }
         else if (*op == '-') { lhs.v.i -= iv; }
         else if (*op == '*') { lhs.v.i *= iv; }
-        else if (*op == '/') { lhs.v.i /= iv; }
-        else if (*op == '%') { lhs.v.i %= iv; }
+        else if (*op == '/' || *op == '%') {
+          if (iv == 0) {
+            fprintf(stderr, "division by zero\n");
+            ore->err = ORE_ERROR_EXCEPTION;
+            return ore_value_nil();
+          }
+          if (*op == '/') lhs.v.i /= iv;
+          else lhs.v.i %= iv;
+        }
         else {
           fprintf(stderr, "unknown operator '%s' for int\n", op);
           ore->err = ORE_ERROR_EXCEPTION;
@@ -1609,7 +1617,14 @@ ore_expr0(ore_context* ore, ore_value lhs, const char* op, ore_value rhs) {
         else if (*op == '-') { lhs.v.d -= fv; }
         else if (*op == '*') { lhs.v.d *= fv; }
         else if (*op == '/') { lhs.v.d /= fv; }
-        else if (*op == '%') { lhs.v.d = ((int) lhs.v.d % (int) fv); }
+        else if (*op == '%') {
+          if (fv == 0) {
+            fprintf(stderr, "division by zero\n");
+            ore->err = ORE_ERROR_EXCEPTION;
+            return ore_value_nil();
+          }
+          lhs.v.d = fmod(lhs.v.d, fv);
+        }
         else {
           fprintf(stderr, "unknown operator '%s' for float\n", op);
           ore->err = ORE_ERROR_EXCEPTION;
