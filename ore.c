@@ -1934,7 +1934,8 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
       ore_value* r = NULL;
       for (i = 2; i < t->children[0]->children_num - 1; i += 3) {
         ore_value key = ore_eval(ore, t->children[0]->children[i]);
-        r = ore_index_ref(ore, lhs, key, 1);
+        int last = i + 3 >= t->children[0]->children_num - 1;
+        r = ore_index_ref(ore, lhs, key, last);
         lhs = r == NULL ? ore_value_nil() : *r;
       }
       if (r == NULL) {
