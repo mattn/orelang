@@ -25,18 +25,16 @@ extern char **environ;
 "           | <true>                                                     \n" \
 "           | <false>                                                    \n" \
 "           | <nil>                                                      \n" \
-"           | <call>                                                     \n" \
 "           | <new>                                                      \n" \
 "           | <ident> ;                                                  \n" \
 "string     : /\"(\\\\.|[^\"])*\"/ | /'(\\\\.|[^'])*'/ ;                  \n" \
 "regexp     : /\\/(\\\\.|[^\\/])*\\// ;                                  \n" \
 "item       : <factor> ('[' <lexp> ']')+ ;                               \n" \
 "prop       : <factor> ('.' <ident>)+ ;                                  \n" \
-"postfix    : (<methodcall> | <item> | <prop> | <anoncall>                 " \
-"         | <call> | <factor>) ;                                         \n" \
-"call       : <ident> '(' <lexp>? (',' <lexp>)* ')' ;                    \n" \
-"anoncall   : <factor> '(' <lexp>? (',' <lexp>)* ')' ;                   \n" \
-"methodcall : <prop> '(' <lexp>? (',' <lexp>)* ')' ;                     \n" \
+"index      : '[' <lexp> ']' ;                                           \n" \
+"dot        : '.' <ident> ;                                              \n" \
+"cargs      : '(' <lexp>? (',' <lexp>)* ')' ;                            \n" \
+"postfix    : <factor> (<index> | <cargs> | <dot>)* ;                    \n" \
 "array      : '[' <lexp>? (',' <lexp>)* ']' ;                            \n" \
 "pair       : <string> ':' <lexp> ;                                      \n" \
 "hash       : '{' <pair>? (',' <pair>)* '}' ;                            \n" \
@@ -103,8 +101,8 @@ enum {
   ORE_TAG_EOF, ORE_TAG_TRUE, ORE_TAG_FALSE, ORE_TAG_NIL,
   ORE_TAG_NUMBER, ORE_TAG_STRING, ORE_TAG_ARRAY, ORE_TAG_HASH,
   ORE_TAG_REGEXP, ORE_TAG_ITEM, ORE_TAG_PROP, ORE_TAG_IDENT,
-  ORE_TAG_CALL, ORE_TAG_NEW, ORE_TAG_LAMBDA,
-  ORE_TAG_FACTOR, ORE_TAG_LEXP_TERM,
+  ORE_TAG_NEW, ORE_TAG_LAMBDA,
+  ORE_TAG_FACTOR, ORE_TAG_POSTFIX, ORE_TAG_LEXP_TERM,
   ORE_TAG_LET_V, ORE_TAG_LET_A, ORE_TAG_LET_P, ORE_TAG_INCDEC,
   ORE_TAG_VAR, ORE_TAG_FUNC,
   ORE_TAG_CLASS_EXT, ORE_TAG_CLASS,
@@ -130,10 +128,10 @@ ore_classify_tag(mpc_ast_t* t) {
   if (is_a(t, "item")) return ORE_TAG_ITEM;
   if (is_a(t, "prop")) return ORE_TAG_PROP;
   if (is_a(t, "ident")) return ORE_TAG_IDENT;
-  if (is_a(t, "call")) return ORE_TAG_CALL;
   if (is_a(t, "new")) return ORE_TAG_NEW;
   if (is_a(t, "lambda")) return ORE_TAG_LAMBDA;
   if (is_a(t, "factor")) return ORE_TAG_FACTOR;
+  if (is_a(t, "postfix")) return ORE_TAG_POSTFIX;
   if (is_a(t, "lexp") || is_a(t, "term") || is_a(t, "arith") ||
       is_a(t, "cmpexp") || is_a(t, "logic") ||
       is_a(t, "pows") || is_a(t, "bits")) return ORE_TAG_LEXP_TERM;
@@ -187,7 +185,6 @@ typedef khiter_t ore_hash_iter_t;
 
 KHASH_MAP_INIT_STR(cfunc, ore_cfunc_t)
 
-static ore_value ore_call(ore_context*, mpc_ast_t*);
 static ore_value ore_eval(ore_context*, mpc_ast_t*);
 static char* ore_value_to_str(ore_context*, ore_value);
 static ore_value ore_value_str_from_ptr(ore_context*, char*, int);
@@ -2216,57 +2213,23 @@ ore_func_call(ore_context* ore, ore_value fn, int num_in, ore_value* args) {
 }
 
 static ore_value
-ore_call(ore_context* ore, mpc_ast_t *t) {
-  ore_value fn;
-  const char* pfn = NULL;
-  if (is_a(t->children[0], "ident")) {
-    pfn = t->children[0]->contents;
-    fn = ore_get(ore, pfn);
-  } else if (is_a(t->children[0], "prop")) {
-    pfn = t->children[0]->children[2]->contents;
-    fn = ore_eval(ore, t->children[0]);
-    if (ore->err != ORE_ERROR_NONE)
-      return ore_value_nil();
-    if (fn.t == ORE_TYPE_NIL) {
-      // FIXME
-      ore_context* tmp = ore;
-      ore_value inst = ore_eval(tmp, t->children[0]->children[0]);
-      while (inst.t == ORE_TYPE_OBJECT) {
-        inst = ore_prop(inst.v.o->e, "super");
-        if (inst.t == ORE_TYPE_NIL)
-          break;
-        fn = ore_prop(inst.v.o->e, pfn);
-        if (fn.t == ORE_TYPE_FUNC || fn.t == ORE_TYPE_CFUNC) {
-          break;
-        }
-      }
-    }
-  } else {
-    pfn = "<anonymous>";
-    fn = ore_eval(ore, t->children[0]);
-  }
-  if (ore->err != ORE_ERROR_NONE)
-    return ore_value_nil();
-  if (fn.t != ORE_TYPE_FUNC && fn.t != ORE_TYPE_CFUNC) {
-    ore_raise(ore, "unknown function '%s'", pfn);
-    return ore_value_nil();
-  }
+ore_call_value(ore_context* ore, ore_value fn, mpc_ast_t* t) {
   ore_value v = ore_value_nil();
   switch (fn.t) {
     case ORE_TYPE_CFUNC:
       {
-        int num_in = t->children_num / 2 - 1, n = 0, i;
+        int num_in = ore_call_num_args(t), n = 0, i;
         if (num_in < fn.v.f.num_in || (fn.v.f.max_in != -1 && num_in > fn.v.f.max_in)) {
           ore_raise(ore, "number of arguments mismatch: %d for %d", num_in, fn.v.f.num_in);
           return ore_value_nil();
         }
-        ore_value* args = (ore_value*) malloc(sizeof(ore_value) * num_in);
+        ore_value* args = (ore_value*) malloc(sizeof(ore_value) * (num_in ? num_in : 1));
         if (!args) {
           fprintf(stderr, "failed to allocate memory\n");
           ore->err = ORE_ERROR_EXCEPTION;
           return ore_value_nil();
         }
-        for (i = 2; i < t->children_num - 1; i += 2) {
+        for (i = ore_call_args_begin(t); i < t->children_num - 1; i += 2) {
           args[n++] = ore_eval(ore, t->children[i]);
           if (ore->err != ORE_ERROR_NONE) {
             free(args);
@@ -2279,6 +2242,12 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
       break;
     case ORE_TYPE_FUNC:
       {
+        int num_in = ore_call_num_args(t);
+        if ((fn.v.f.num_in != -1 && num_in < fn.v.f.num_in) ||
+            (fn.v.f.max_in != -1 && num_in > fn.v.f.max_in)) {
+          ore_raise(ore, "number of arguments mismatch: %d for %d", num_in, fn.v.f.num_in);
+          return ore_value_nil();
+        }
         ore_context* env = ore_new((ore_context*) fn.v.f.ore);
         if (fn.v.f.body) {
           ore_value* args = ore_bind_args(ore, fn.v.f.x.o, env, t);
@@ -2291,7 +2260,7 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
       }
       break;
     default:
-      ore_raise(ore, "invalid function call");
+      ore_raise(ore, "not a function");
       return ore_value_nil();
   }
   return v;
@@ -2730,8 +2699,65 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     }
   case ORE_TAG_IDENT:
     return ore_get(ore, t->contents);
-  case ORE_TAG_CALL:
-    return ore_call(ore, t);
+  case ORE_TAG_POSTFIX:
+    {
+      ore_value v = ore_eval(ore, t->children[0]);
+      if (ore->err != ORE_ERROR_NONE)
+        return ore_value_nil();
+      for (i = 1; i < t->children_num; i++) {
+        mpc_ast_t* c = t->children[i];
+        if (is_a(c, "index")) {
+          ore_value key = ore_eval(ore, c->children[1]);
+          if (ore->err != ORE_ERROR_NONE)
+            return ore_value_nil();
+          if (v.t == ORE_TYPE_STRING) {
+            if (key.t != ORE_TYPE_INT) {
+              ore_raise(ore, "string index should be int");
+              return ore_value_nil();
+            }
+            if (key.v.i < 0 || key.v.i >= v.v.s->l) {
+              ore_raise(ore, "out of bounds for string");
+              return ore_value_nil();
+            }
+            char* p = calloc(1, 2);
+            p[0] = v.v.s->p[key.v.i];
+            v = ore_value_str_from_ptr(ore, p, 1);
+            continue;
+          }
+          ore_value* r = ore_index_ref(ore, v, key, 0);
+          if (ore->err != ORE_ERROR_NONE)
+            return ore_value_nil();
+          v = r == NULL ? ore_value_nil() : *r;
+        } else if (is_a(c, "dot")) {
+          const char* pname = c->children[1]->contents;
+          if (v.t == ORE_TYPE_OBJECT) {
+            ore_value inst = v;
+            ore_value nv = ore_prop((ore_context*) inst.v.o->e, pname);
+            while (nv.t == ORE_TYPE_NIL) {
+              inst = ore_prop((ore_context*) inst.v.o->e, "super");
+              if (inst.t != ORE_TYPE_OBJECT)
+                break;
+              nv = ore_prop((ore_context*) inst.v.o->e, pname);
+            }
+            v = nv;
+          } else if (v.t == ORE_TYPE_ENV) {
+            v = ore_prop((ore_context*) v.v.e->p, pname);
+          } else {
+            ore_raise(ore, "invalid operation for %s", ore_kind(v));
+            return ore_value_nil();
+          }
+        } else if (is_a(c, "cargs")) {
+          if (v.t != ORE_TYPE_FUNC && v.t != ORE_TYPE_CFUNC) {
+            ore_raise(ore, "not a function");
+            return ore_value_nil();
+          }
+          v = ore_call_value(ore, v, c);
+          if (ore->err != ORE_ERROR_NONE)
+            return ore_value_nil();
+        }
+      }
+      return v;
+    }
   case ORE_TAG_NEW:
     return ore_object_new(ore, t);
   case ORE_TAG_LAMBDA:
@@ -3335,9 +3361,9 @@ main(int argc, char **argv) {
   mpc_parser_t* m_class      = mpc_new("class");
   mpc_parser_t* m_classext   = mpc_new("class_ext");
   mpc_parser_t* m_new        = mpc_new("new");
-  mpc_parser_t* m_call       = mpc_new("call");
-  mpc_parser_t* m_anoncall   = mpc_new("anoncall");
-  mpc_parser_t* m_methodcall = mpc_new("methodcall");
+  mpc_parser_t* m_index      = mpc_new("index");
+  mpc_parser_t* m_dot        = mpc_new("dot");
+  mpc_parser_t* m_cargs      = mpc_new("cargs");
   mpc_parser_t* m_return     = mpc_new("return");
   mpc_parser_t* m_comment    = mpc_new("comment");
   mpc_parser_t* m_eof        = mpc_new("eof");
@@ -3398,9 +3424,9 @@ m_template,\
 m_class,\
 m_classext,\
 m_new,\
-m_call,\
-m_anoncall,\
-m_methodcall,\
+m_index,\
+m_dot,\
+m_cargs,\
 m_return,\
 m_comment,\
 m_eof,\
