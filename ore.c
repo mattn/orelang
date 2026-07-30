@@ -74,6 +74,7 @@ extern char **environ;
 "class_ext  : \"class\" <ident> \"extends\" <ident> '{' <template> '}' ; \n" \
 "new        : \"new\" <ident> '(' <lexp>? (',' <lexp>)* ')' ;            \n" \
 "                                                                        \n" \
+"import     : \"import\" <string> (\"as\" <ident>)? ';' ;                \n" \
 "throw      : \"throw\" <lexp> ';' ;                                     \n" \
 "try        : \"try\" '{' <stmts> '}'                                      " \
 "         \"catch\" ('(' <ident> ')')? '{' <stmts> '}' ;                 \n" \
@@ -85,7 +86,8 @@ extern char **environ;
 "stmt       : (<let_v> | <let_a> | <let_p> | <incdec> ';' | <var> | <if>   " \
 "         | <while> | <for_in> | <for_c>                                   " \
 "         | <func> | <class_ext> | <class> | <return> | <break>          \n" \
-"         | <continue> | <try> | <throw> | <lexp> ';' | <comment>) ;     \n" \
+"         | <continue> | <try> | <throw> | <import>                        " \
+"         | <lexp> ';' | <comment>) ;                                    \n" \
 "stmts      : <stmt>* ;                                                  \n" \
 "program    : <stmts> <eof> ;                                            \n"
 
@@ -102,7 +104,7 @@ enum {
   ORE_TAG_VAR, ORE_TAG_FUNC,
   ORE_TAG_CLASS_EXT, ORE_TAG_CLASS,
   ORE_TAG_RETURN, ORE_TAG_BREAK, ORE_TAG_CONTINUE,
-  ORE_TAG_TRY, ORE_TAG_THROW,
+  ORE_TAG_TRY, ORE_TAG_THROW, ORE_TAG_IMPORT,
   ORE_TAG_IF_STMT, ORE_TAG_IF, ORE_TAG_WHILE, ORE_TAG_FOR_IN, ORE_TAG_FOR_C,
   ORE_TAG_STMTS, ORE_TAG_STMT, ORE_TAG_SEMI,
 };
@@ -142,6 +144,7 @@ ore_classify_tag(mpc_ast_t* t) {
   if (is_a(t, "continue")) return ORE_TAG_CONTINUE;
   if (is_a(t, "throw")) return ORE_TAG_THROW;
   if (is_a(t, "try")) return ORE_TAG_TRY;
+  if (is_a(t, "import")) return ORE_TAG_IMPORT;
   if (is_a(t, "if_stmt")) return ORE_TAG_IF_STMT;
   if (is_a(t, "if")) return ORE_TAG_IF;
   if (is_a(t, "while")) return ORE_TAG_WHILE;
@@ -2742,15 +2745,17 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
       ore_value v = ore_eval(ore, t->children[0]);
       if (ore->err != ORE_ERROR_NONE)
         return ore_value_nil();
-      ore_context* this = v.t == ORE_TYPE_OBJECT ? (ore_context*) v.v.o->e : NULL;
+      ore_context* this = v.t == ORE_TYPE_OBJECT ? (ore_context*) v.v.o->e :
+        v.t == ORE_TYPE_ENV ? (ore_context*) v.v.e->p : NULL;
       for (i = 2; i < t->children_num; i += 2) {
-        if (v.t != ORE_TYPE_OBJECT) {
+        if (v.t != ORE_TYPE_OBJECT && v.t != ORE_TYPE_ENV) {
           fprintf(stderr, "invalid operation for %s\n", ore_kind(v));
           ore->err = ORE_ERROR_EXCEPTION;
           return ore_value_nil();
         }
         v = ore_prop(this, t->children[i]->contents);
         if (v.t == ORE_TYPE_OBJECT) this = (ore_context*) v.v.o->e;
+        else if (v.t == ORE_TYPE_ENV) this = (ore_context*) v.v.e->p;
       }
       return v;
     }
@@ -2905,6 +2910,47 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
       ore->err = ORE_ERROR_RETURN;
       ore_value_ref(v);
       return v;
+    }
+  case ORE_TAG_IMPORT:
+    {
+      ore_context* root = ore;
+      while (root->parent) root = root->parent;
+      ore_parse_context* pctx = (ore_parse_context*) root->c;
+      if (!pctx) {
+        fprintf(stderr, "import is not available\n");
+        ore->err = ORE_ERROR_EXCEPTION;
+        return ore_value_nil();
+      }
+      ore_value path = ore_parse_str(ore, t->children[1]->contents);
+      if (ore->err != ORE_ERROR_NONE)
+        return ore_value_nil();
+      mpc_ast_t* as = NULL;
+      for (i = 2; i < t->children_num; i++) {
+        if (is_a(t->children[i], "ident")) as = t->children[i];
+      }
+      mpc_result_t result;
+      if (!mpc_parse_contents(path.v.s->p, pctx->program, &result)) {
+        ore_err_print(result.error);
+        mpc_err_delete(result.error);
+        ore->err = ORE_ERROR_EXCEPTION;
+        return ore_value_nil();
+      }
+      mpc_ast_add_child(pctx->root, result.output);
+      if (as) {
+        ore_context* menv = ore_new(root);
+        ore_eval(menv, result.output);
+        if (menv->err == ORE_ERROR_EXCEPTION) {
+          ore->err = menv->err;
+          return ore_value_nil();
+        }
+        ore_value m = ore_value_env_from_context(menv);
+        ore_define(ore, as->contents, m);
+        return m;
+      }
+      ore_eval(root, result.output);
+      if (root->err != ORE_ERROR_NONE)
+        ore->err = root->err;
+      return ore_value_nil();
     }
   case ORE_TAG_THROW:
     {
@@ -3150,6 +3196,7 @@ ore_new(ore_context* parent) {
   ore->env = kh_init(value);
   ore->err = ORE_ERROR_NONE;
   ore->exc = ore_value_nil();
+  ore->c = NULL;
   ore->parent = parent;
   if (parent) {
     ore_context* root = parent;
@@ -3244,6 +3291,7 @@ main(int argc, char **argv) {
   mpc_parser_t* m_forin      = mpc_new("for_in");
   mpc_parser_t* m_lets       = mpc_new("let_s");
   mpc_parser_t* m_forc       = mpc_new("for_c");
+  mpc_parser_t* m_import     = mpc_new("import");
   mpc_parser_t* m_throw      = mpc_new("throw");
   mpc_parser_t* m_try        = mpc_new("try");
   mpc_parser_t* m_break      = mpc_new("break");
@@ -3302,6 +3350,7 @@ m_while,\
 m_forin,\
 m_lets,\
 m_forc,\
+m_import,\
 m_throw,\
 m_try,\
 m_break,\
@@ -3337,6 +3386,7 @@ m_program
   pc.program = m_program;
 
   ore_context* ore = ore_new(NULL);
+  ore->c = &pc;
   ore_define_cfunc(ore, "dump_env", 0, 0, ore_cfunc_dump_env, NULL);
   ore_define_cfunc(ore, "to_string", 1, 1, ore_cfunc_to_string, NULL);
   ore_define_cfunc(ore, "print", 0, -1, ore_cfunc_print, NULL);
@@ -3435,7 +3485,7 @@ m_program
   ore_destroy(ore);
 
 leave:
-  mpc_cleanup(56, NODES);
+  mpc_cleanup(57, NODES);
   return 0;
 }
 
