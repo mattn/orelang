@@ -1172,6 +1172,120 @@ ore_cfunc_trim(ore_context* ore, int num_in, ore_value* args, void* u) {
   return ore_value_str_from_ptr(ore, p, n);
 }
 
+static int
+ore_value_num(ore_context* ore, ore_value v, double* d) {
+  if (v.t == ORE_TYPE_INT) { *d = (double) v.v.i; return 0; }
+  if (v.t == ORE_TYPE_FLOAT) { *d = v.v.d; return 0; }
+  fprintf(stderr, "argument should be number\n");
+  ore->err = ORE_ERROR_EXCEPTION;
+  return -1;
+}
+
+static ore_value
+ore_cfunc_to_int(ore_context* ore, int num_in, ore_value* args, void* u) {
+  ore_value v = { ORE_TYPE_INT };
+  switch (args[0].t) {
+    case ORE_TYPE_INT:
+      return args[0];
+    case ORE_TYPE_FLOAT:
+      v.v.i = (int) args[0].v.d;
+      return v;
+    case ORE_TYPE_BOOL:
+      v.v.i = args[0].v.b ? 1 : 0;
+      return v;
+    case ORE_TYPE_STRING:
+      v.v.i = (int) strtol(args[0].v.s->p, NULL, 0);
+      return v;
+    default:
+      break;
+  }
+  fprintf(stderr, "cannot convert %s to int\n", ore_kind(args[0]));
+  ore->err = ORE_ERROR_EXCEPTION;
+  return ore_value_nil();
+}
+
+static ore_value
+ore_cfunc_to_float(ore_context* ore, int num_in, ore_value* args, void* u) {
+  ore_value v = { ORE_TYPE_FLOAT };
+  switch (args[0].t) {
+    case ORE_TYPE_INT:
+      v.v.d = (double) args[0].v.i;
+      return v;
+    case ORE_TYPE_FLOAT:
+      return args[0];
+    case ORE_TYPE_STRING:
+      v.v.d = strtod(args[0].v.s->p, NULL);
+      return v;
+    default:
+      break;
+  }
+  fprintf(stderr, "cannot convert %s to float\n", ore_kind(args[0]));
+  ore->err = ORE_ERROR_EXCEPTION;
+  return ore_value_nil();
+}
+
+static ore_value
+ore_cfunc_abs(ore_context* ore, int num_in, ore_value* args, void* u) {
+  ore_value v = args[0];
+  if (v.t == ORE_TYPE_INT) {
+    if (v.v.i < 0) v.v.i = -v.v.i;
+    return v;
+  }
+  if (v.t == ORE_TYPE_FLOAT) {
+    v.v.d = fabs(v.v.d);
+    return v;
+  }
+  fprintf(stderr, "argument should be number\n");
+  ore->err = ORE_ERROR_EXCEPTION;
+  return ore_value_nil();
+}
+
+static ore_value
+ore_cfunc_floor(ore_context* ore, int num_in, ore_value* args, void* u) {
+  double d;
+  if (ore_value_num(ore, args[0], &d)) return ore_value_nil();
+  ore_value v = { ORE_TYPE_INT };
+  v.v.i = (int) floor(d);
+  return v;
+}
+
+static ore_value
+ore_cfunc_ceil(ore_context* ore, int num_in, ore_value* args, void* u) {
+  double d;
+  if (ore_value_num(ore, args[0], &d)) return ore_value_nil();
+  ore_value v = { ORE_TYPE_INT };
+  v.v.i = (int) ceil(d);
+  return v;
+}
+
+static ore_value
+ore_cfunc_round(ore_context* ore, int num_in, ore_value* args, void* u) {
+  double d;
+  if (ore_value_num(ore, args[0], &d)) return ore_value_nil();
+  ore_value v = { ORE_TYPE_INT };
+  v.v.i = (int) floor(d + 0.5);
+  return v;
+}
+
+static ore_value
+ore_cfunc_sqrt(ore_context* ore, int num_in, ore_value* args, void* u) {
+  double d;
+  if (ore_value_num(ore, args[0], &d)) return ore_value_nil();
+  ore_value v = { ORE_TYPE_FLOAT };
+  v.v.d = sqrt(d);
+  return v;
+}
+
+static ore_value
+ore_cfunc_pow(ore_context* ore, int num_in, ore_value* args, void* u) {
+  double x, y;
+  if (ore_value_num(ore, args[0], &x)) return ore_value_nil();
+  if (ore_value_num(ore, args[1], &y)) return ore_value_nil();
+  ore_value v = { ORE_TYPE_FLOAT };
+  v.v.d = pow(x, y);
+  return v;
+}
+
 static ore_value
 ore_cfunc_typeof(ore_context* ore, int num_in, ore_value* args, void* u) {
   return ore_value_str_from_ptr(ore, (char*) ore_kind(args[0]), -1);
@@ -2763,6 +2877,14 @@ m_program
   ore_define_cfunc(ore, "upper", 1, 1, ore_cfunc_upper, NULL);
   ore_define_cfunc(ore, "lower", 1, 1, ore_cfunc_lower, NULL);
   ore_define_cfunc(ore, "trim", 1, 1, ore_cfunc_trim, NULL);
+  ore_define_cfunc(ore, "to_int", 1, 1, ore_cfunc_to_int, NULL);
+  ore_define_cfunc(ore, "to_float", 1, 1, ore_cfunc_to_float, NULL);
+  ore_define_cfunc(ore, "abs", 1, 1, ore_cfunc_abs, NULL);
+  ore_define_cfunc(ore, "floor", 1, 1, ore_cfunc_floor, NULL);
+  ore_define_cfunc(ore, "ceil", 1, 1, ore_cfunc_ceil, NULL);
+  ore_define_cfunc(ore, "round", 1, 1, ore_cfunc_round, NULL);
+  ore_define_cfunc(ore, "sqrt", 1, 1, ore_cfunc_sqrt, NULL);
+  ore_define_cfunc(ore, "pow", 2, 2, ore_cfunc_pow, NULL);
   ore_define_cfunc(ore, "typeof", 1, 1, ore_cfunc_typeof, NULL);
   ore_define_cfunc(ore, "load", 1, 1, ore_cfunc_load, &pc);
   ore_define_cfunc(ore, "environ", 0, 1, ore_cfunc_environ, &pc);
