@@ -1,0 +1,80 @@
+r = "";
+x = 2;
+switch (x) {
+  case 1:
+    r = "one";
+  case 2:
+    r = "two";
+  case 3:
+    r = "three";
+  default:
+    r = "many";
+}
+is("two", r, "switch match");
+
+switch (9) {
+  case 1:
+    r = "a";
+  default:
+    r = "def";
+}
+is("def", r, "switch default");
+
+switch ("b") {
+  case "a":
+    r = "A";
+  case "b":
+    r = "B";
+}
+is("B", r, "switch string");
+
+cnt = 0;
+switch (1) {
+  case 1:
+    cnt++;
+  case 1:
+    cnt++;
+}
+is(1, cnt, "no fallthrough");
+
+r = "keep";
+switch (5) {
+  case 1:
+    r = "x";
+}
+is("keep", r, "no match no default");
+
+func f(y) {
+  switch (y) {
+    case 1:
+      return "one";
+    default:
+      return "other";
+  }
+  return "?";
+}
+is("one", f(1), "return in case");
+is("other", f(9), "return in default");
+
+i = 0;
+do {
+  i++;
+} while (i < 5);
+is(5, i, "do while");
+
+j = 100;
+do {
+  j++;
+} while (false);
+is(101, j, "do while runs once");
+
+k = 0;
+do {
+  k++;
+  if (k == 3) {
+    break;
+  }
+} while (true);
+is(3, k, "do while break");
+
+# vim: set ft=ore:
