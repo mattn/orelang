@@ -1,0 +1,24 @@
+path = "t_io_tmp.txt";
+
+ok(write_file(path, "hello"), "write_file");
+is("hello", read_file(path), "read_file");
+
+ok(append_file(path, " world"), "append_file");
+is("hello world", read_file(path), "read after append");
+
+ok(write_file(path, "line1\nline2\n"), "overwrite");
+p = split(read_file(path), "\n");
+is("line1", p[0], "read lines");
+
+ok(remove_file(path), "remove_file");
+ok(!remove_file(path), "remove missing");
+
+caught = false;
+try {
+  read_file("no_such_file_xyz.txt");
+} catch {
+  caught = true;
+}
+ok(caught, "read missing file raises");
+
+# vim: set ft=ore:
