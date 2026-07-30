@@ -1,0 +1,39 @@
+h = {"f": func(x) { return x * 2; }};
+is(42, h["f"](21), "call hash element");
+
+func mk() {
+  return func(y) {
+    return y + 1;
+  };
+}
+is(42, mk()(41), "call returned func");
+
+class C {
+  var x = 5;
+  var arr = [10, 20];
+  func get() {
+    return this;
+  }
+  func hi() {
+    return "hi";
+  }
+}
+
+o = new C();
+is(5, o.get().x, "method chain prop");
+is(20, o.arr[1], "prop then index");
+is("hi", new C().hi(), "method on new");
+
+class A {
+  var v = 7;
+}
+class B extends A {
+}
+b = new B();
+is(7, b.v, "inherited field");
+
+is("b", split("a,b,c", ",")[1], "index call result");
+
+is(1, ((((((((((1)))))))))), "deep parens parse fast");
+
+# vim: set ft=ore:
