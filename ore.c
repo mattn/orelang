@@ -59,6 +59,10 @@ extern char **environ;
 "if_stmt    : \"if\" '(' <lexp> ')' '{' <stmts> '}' ;                    \n" \
 "if         : <if_stmt> <else_if>* <else>? ;                             \n" \
 "while      : \"while\" '(' <lexp> ')' '{' <stmts> '}' ;                 \n" \
+"dowhile    : \"do\" '{' <stmts> '}' \"while\" '(' <lexp> ')' ';' ;      \n" \
+"case       : \"case\" <lexp> ':' <stmts> ;                              \n" \
+"default    : \"default\" ':' <stmts> ;                                  \n" \
+"switch     : \"switch\" '(' <lexp> ')' '{' <case>* <default>? '}' ;     \n" \
 "for_in     : \"for\" '(' <ident> \"in\" <lexp> ')' '{' <stmts> '}' ;    \n" \
 "let_s      : <ident> <let_o> <lexp> ;                                   \n" \
 "for_c      : \"for\" '(' (<let_v> | <var> | ';') <lexp>? ';'              " \
@@ -84,7 +88,7 @@ extern char **environ;
 "comment    : /#[^\n]*/ ;                                                \n" \
 "eof        : /$/ ;                                                      \n" \
 "stmt       : (<let_v> | <let_a> | <let_p> | <incdec> ';' | <var> | <if>   " \
-"         | <while> | <for_in> | <for_c>                                   " \
+"         | <while> | <dowhile> | <switch> | <for_in> | <for_c>            " \
 "         | <func> | <class_ext> | <class> | <return> | <break>          \n" \
 "         | <continue> | <try> | <throw> | <import>                        " \
 "         | <lexp> ';' | <comment>) ;                                    \n" \
@@ -106,6 +110,7 @@ enum {
   ORE_TAG_RETURN, ORE_TAG_BREAK, ORE_TAG_CONTINUE,
   ORE_TAG_TRY, ORE_TAG_THROW, ORE_TAG_IMPORT,
   ORE_TAG_IF_STMT, ORE_TAG_IF, ORE_TAG_WHILE, ORE_TAG_FOR_IN, ORE_TAG_FOR_C,
+  ORE_TAG_DOWHILE, ORE_TAG_SWITCH,
   ORE_TAG_STMTS, ORE_TAG_STMT, ORE_TAG_SEMI,
 };
 
@@ -145,6 +150,8 @@ ore_classify_tag(mpc_ast_t* t) {
   if (is_a(t, "throw")) return ORE_TAG_THROW;
   if (is_a(t, "try")) return ORE_TAG_TRY;
   if (is_a(t, "import")) return ORE_TAG_IMPORT;
+  if (is_a(t, "dowhile")) return ORE_TAG_DOWHILE;
+  if (is_a(t, "switch")) return ORE_TAG_SWITCH;
   if (is_a(t, "if_stmt")) return ORE_TAG_IF_STMT;
   if (is_a(t, "if")) return ORE_TAG_IF;
   if (is_a(t, "while")) return ORE_TAG_WHILE;
@@ -540,6 +547,16 @@ ore_define_class(ore_context* ore, mpc_ast_t* tn, mpc_ast_t* tb, const char* bas
   while (g->parent) g = g->parent;
   ore_define(g, v.v.c->n, v);
   return v;
+}
+
+static mpc_ast_t*
+ore_find_case_body(mpc_ast_t* c) {
+  int i;
+  for (i = 0; i < c->children_num; i++) {
+    if (is_a(c->children[i], "char") && c->children[i]->contents[0] == ':')
+      return i + 1 < c->children_num ? c->children[i+1] : NULL;
+  }
+  return NULL;
 }
 
 static mpc_ast_t*
@@ -3122,6 +3139,68 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
       ore_destroy(env);
       return ore_value_nil();
     }
+  case ORE_TAG_DOWHILE:
+    {
+      mpc_ast_t* cond = NULL;
+      for (i = 0; i < t->children_num; i++) {
+        if (is_a(t->children[i], "char") && t->children[i]->contents[0] == '(') {
+          cond = t->children[i+1];
+          break;
+        }
+      }
+      ore_context* env = ore_new(ore);
+      ore_value v = ore_value_nil();
+      while (1) {
+        v = ore_eval(env, ore_find_statements(t));
+        if (env->err != ORE_ERROR_NONE) {
+          if (env->err == ORE_ERROR_CONTINUE)
+            env->err = ORE_ERROR_NONE;
+          else
+            break;
+        }
+        int r = ore_is_true(ore_eval(env, cond));
+        if (env->err != ORE_ERROR_NONE || !r)
+          break;
+      }
+      if (env->err == ORE_ERROR_RETURN || env->err == ORE_ERROR_EXCEPTION) {
+        ore->err = env->err;
+        ore_destroy(env);
+        return v;
+      }
+      ore_destroy(env);
+      return ore_value_nil();
+    }
+  case ORE_TAG_SWITCH:
+    {
+      ore_value subj = ore_eval(ore, t->children[2]);
+      if (ore->err != ORE_ERROR_NONE)
+        return ore_value_nil();
+      mpc_ast_t* dflt = NULL;
+      int matched = 0;
+      ore_value v = ore_value_nil();
+      for (i = 0; i < t->children_num; i++) {
+        mpc_ast_t* c = t->children[i];
+        if (is_a(c, "char") || is_a(c, "string")) continue;
+        if (is_a(c, "default")) {
+          dflt = c;
+          continue;
+        }
+        if (!is_a(c, "case")) continue;
+        ore_value cv = ore_eval(ore, c->children[1]);
+        if (ore->err != ORE_ERROR_NONE)
+          return ore_value_nil();
+        if (ore_cmp_eq(ore, subj, cv)) {
+          v = ore_eval(ore, ore_find_case_body(c));
+          matched = 1;
+          break;
+        }
+      }
+      if (!matched && dflt)
+        v = ore_eval(ore, ore_find_case_body(dflt));
+      if (ore->err == ORE_ERROR_BREAK)
+        ore->err = ORE_ERROR_NONE;
+      return v;
+    }
   case ORE_TAG_FOR_C:
     {
       mpc_ast_t *init = NULL, *cond = NULL, *step = NULL;
@@ -3288,6 +3367,10 @@ main(int argc, char **argv) {
   mpc_parser_t* m_elseif     = mpc_new("else_if");
   mpc_parser_t* m_else       = mpc_new("else");
   mpc_parser_t* m_while      = mpc_new("while");
+  mpc_parser_t* m_dowhile    = mpc_new("dowhile");
+  mpc_parser_t* m_case       = mpc_new("case");
+  mpc_parser_t* m_default    = mpc_new("default");
+  mpc_parser_t* m_switch     = mpc_new("switch");
   mpc_parser_t* m_forin      = mpc_new("for_in");
   mpc_parser_t* m_lets       = mpc_new("let_s");
   mpc_parser_t* m_forc       = mpc_new("for_c");
@@ -3347,6 +3430,10 @@ m_ifstmt,\
 m_elseif,\
 m_else,\
 m_while,\
+m_dowhile,\
+m_case,\
+m_default,\
+m_switch,\
 m_forin,\
 m_lets,\
 m_forc,\
@@ -3485,7 +3572,7 @@ m_program
   ore_destroy(ore);
 
 leave:
-  mpc_cleanup(57, NODES);
+  mpc_cleanup(61, NODES);
   return 0;
 }
 
