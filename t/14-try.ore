@@ -1,0 +1,67 @@
+x = 0;
+try {
+  throw "boom";
+  x = 1;
+} catch (e) {
+  is("boom", e, "catch thrown value");
+  x = 2;
+}
+is(2, x, "catch ran");
+
+y = 0;
+try {
+  y = 1;
+} catch (e) {
+  y = 2;
+}
+is(1, y, "no throw");
+
+try {
+  throw 42;
+} catch (e) {
+  is(42, e, "throw int");
+}
+
+r = "";
+try {
+  try {
+    throw "inner";
+  } catch (e) {
+    r = r + "a";
+    throw "outer";
+  }
+} catch (e2) {
+  r = r + "b";
+  is("outer", e2, "rethrow");
+}
+is("ab", r, "nested try");
+
+w = 0;
+try {
+  throw 1;
+} catch {
+  w = 9;
+}
+is(9, w, "catch without param");
+
+func f() {
+  try {
+    return 7;
+  } catch {
+    return -1;
+  }
+  return -2;
+}
+is(7, f(), "return in try");
+
+func g() {
+  try {
+    throw "x";
+  } catch {
+    return 8;
+  }
+  return -1;
+}
+is(8, g(), "return in catch");
+
+# vim: set ft=ore:
