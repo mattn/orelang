@@ -35,10 +35,32 @@ func find4() {
 }
 is(4, find4(), "return from while");
 
-#x = 0;
-#for a = 0; a < 10; a++ {
-#  x++;
-#}
-#is(10, x, "C-style for loop");
+x = 0;
+for (a = 0; a < 10; a++) {
+  x++;
+}
+is(10, x, "C-style for loop");
+
+s = 0;
+for (i = 0; i < 5; i = i + 1) {
+  if (i == 2) {
+    continue;
+  }
+  if (i == 4) {
+    break;
+  }
+  s += i;
+}
+is(4, s, "for with break/continue");
+
+func findc() {
+  for (i = 0; ; i++) {
+    if (i == 3) {
+      return i;
+    }
+  }
+  return -1;
+}
+is(3, findc(), "for empty cond and return");
 
 # vim: set ft=ore:

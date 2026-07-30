@@ -60,6 +60,9 @@ extern char **environ;
 "if         : <if_stmt> <else_if>* <else>? ;                             \n" \
 "while      : \"while\" '(' <lexp> ')' '{' <stmts> '}' ;                 \n" \
 "for_in     : \"for\" '(' <ident> \"in\" <lexp> ')' '{' <stmts> '}' ;    \n" \
+"let_s      : <ident> <let_o> <lexp> ;                                   \n" \
+"for_c      : \"for\" '(' (<let_v> | <var> | ';') <lexp>? ';'              " \
+"         (<incdec> | <let_s>)? ')' '{' <stmts> '}' ;                    \n" \
 "var        : \"var\" <ident> '=' <lexp> ';' ;                           \n" \
 "vararg     : \"...\" ;                                                  \n" \
 "lambda     : \"func\"                                                     " \
@@ -77,7 +80,7 @@ extern char **environ;
 "comment    : /#[^\n]*/ ;                                                \n" \
 "eof        : /$/ ;                                                      \n" \
 "stmt       : (<let_v> | <let_a> | <let_p> | <incdec> ';' | <var> | <if>   " \
-"         | <while> | <for_in>                                             " \
+"         | <while> | <for_in> | <for_c>                                   " \
 "         | <func> | <class_ext> | <class> | <return> | <break>          \n" \
 "         | <continue> | <lexp> ';' | <comment>) ;                       \n" \
 "stmts      : <stmt>* ;                                                  \n" \
@@ -96,7 +99,7 @@ enum {
   ORE_TAG_VAR, ORE_TAG_FUNC,
   ORE_TAG_CLASS_EXT, ORE_TAG_CLASS,
   ORE_TAG_RETURN, ORE_TAG_BREAK, ORE_TAG_CONTINUE,
-  ORE_TAG_IF_STMT, ORE_TAG_IF, ORE_TAG_WHILE, ORE_TAG_FOR_IN,
+  ORE_TAG_IF_STMT, ORE_TAG_IF, ORE_TAG_WHILE, ORE_TAG_FOR_IN, ORE_TAG_FOR_C,
   ORE_TAG_STMTS, ORE_TAG_STMT, ORE_TAG_SEMI,
 };
 
@@ -123,7 +126,7 @@ ore_classify_tag(mpc_ast_t* t) {
       is_a(t, "cmpexp") || is_a(t, "logic") ||
       is_a(t, "pows") || is_a(t, "bits")) return ORE_TAG_LEXP_TERM;
   if (is_a(t, "incdec")) return ORE_TAG_INCDEC;
-  if (is_a(t, "let_v")) return ORE_TAG_LET_V;
+  if (is_a(t, "let_v") || is_a(t, "let_s")) return ORE_TAG_LET_V;
   if (is_a(t, "let_a")) return ORE_TAG_LET_A;
   if (is_a(t, "let_p")) return ORE_TAG_LET_P;
   if (is_a(t, "var")) return ORE_TAG_VAR;
@@ -137,6 +140,7 @@ ore_classify_tag(mpc_ast_t* t) {
   if (is_a(t, "if")) return ORE_TAG_IF;
   if (is_a(t, "while")) return ORE_TAG_WHILE;
   if (is_a(t, "for_in")) return ORE_TAG_FOR_IN;
+  if (is_a(t, "for_c")) return ORE_TAG_FOR_C;
   if (is_a(t, "stmts") || is_a(t, "template")) return ORE_TAG_STMTS;
   if (is_a(t, "stmt")) return ORE_TAG_STMT;
   if (is_a(t, "char") && !strcmp(t->contents, ";")) return ORE_TAG_SEMI;
@@ -2704,6 +2708,47 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
       ore_destroy(env);
       return ore_value_nil();
     }
+  case ORE_TAG_FOR_C:
+    {
+      mpc_ast_t *init = NULL, *cond = NULL, *step = NULL;
+      for (i = 0; i < t->children_num; i++) {
+        mpc_ast_t* c = t->children[i];
+        if (is_a(c, "char")) {
+          if (c->contents[0] == '{') break;
+          continue;
+        }
+        if (is_a(c, "string")) continue;
+        if (is_a(c, "let_v") || is_a(c, "var")) init = c;
+        else if (is_a(c, "incdec") || is_a(c, "let_s")) step = c;
+        else cond = c;
+      }
+      ore_context* env = ore_new(ore);
+      ore_value v = ore_value_nil();
+      if (init)
+        ore_eval(env, init);
+      while (env->err == ORE_ERROR_NONE) {
+        if (cond) {
+          int r = ore_is_true(ore_eval(env, cond));
+          if (env->err != ORE_ERROR_NONE || !r) break;
+        }
+        v = ore_eval(env, ore_find_statements(t));
+        if (env->err != ORE_ERROR_NONE) {
+          if (env->err == ORE_ERROR_CONTINUE)
+            env->err = ORE_ERROR_NONE;
+          else
+            break;
+        }
+        if (step)
+          ore_eval(env, step);
+      }
+      if (env->err == ORE_ERROR_RETURN || env->err == ORE_ERROR_EXCEPTION) {
+        ore->err = env->err;
+        ore_destroy(env);
+        return v;
+      }
+      ore_destroy(env);
+      return ore_value_nil();
+    }
   case ORE_TAG_STMTS:
     {
       ore_value v = ore_value_nil();
@@ -2828,6 +2873,8 @@ main(int argc, char **argv) {
   mpc_parser_t* m_else       = mpc_new("else");
   mpc_parser_t* m_while      = mpc_new("while");
   mpc_parser_t* m_forin      = mpc_new("for_in");
+  mpc_parser_t* m_lets       = mpc_new("let_s");
+  mpc_parser_t* m_forc       = mpc_new("for_c");
   mpc_parser_t* m_break      = mpc_new("break");
   mpc_parser_t* m_continue   = mpc_new("continue");
   mpc_parser_t* m_var        = mpc_new("var");
@@ -2882,6 +2929,8 @@ m_elseif,\
 m_else,\
 m_while,\
 m_forin,\
+m_lets,\
+m_forc,\
 m_break,\
 m_continue,\
 m_var,\
@@ -3000,7 +3049,7 @@ m_program
   ore_destroy(ore);
 
 leave:
-  mpc_cleanup(52, NODES);
+  mpc_cleanup(54, NODES);
   return 0;
 }
 
