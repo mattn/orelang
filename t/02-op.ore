@@ -47,7 +47,11 @@ ok(arr[0] + 1 == 3, "arr[0] + 1 == 3");
 ok(1 == 2 - 1, "1 == 2 - 1");
 ok(1 + 2 * 3 == 7, "1 + 2 * 3 == 7");
 
-#is(true, 1 <= 2 ? true : false, "1 == 1 ? true : false");
+is(true, 1 <= 2 ? true : false, "1 <= 2 ? true : false");
+is("b", 1 > 2 ? "a" : "b", "ternary false branch");
+is(2, false ? 1 : true ? 2 : 3, "nested ternary");
+x = 10;
+is("big", x > 5 ? "big" : "small", "ternary with var");
 
 a = 1; a += 1;
 is(2, a, "+=");
