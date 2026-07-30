@@ -7,3 +7,10 @@ a = ("bar" =~ /^(.)(.)(.)$/);
 is("b", a[0], "/^(.)(.)(.)$/");
 is("a", a[1], "/^(.)(.)(.)$/");
 is("r", a[2], "/^(.)(.)(.)$/");
+
+is("bXr bXz", gsub("bar baz", /a/, "X"), "gsub");
+is("Xar baz", sub("bar baz", /b/, "X"), "sub first only");
+is("bar", gsub("bar", /x/, "Y"), "gsub no match");
+is("b-r b-z", gsub("bar baz", /a/, "-"), "gsub again");
+is("XbarX", gsub("bar", /^bar$/, "XbarX"), "gsub anchored");
+is("1_2_3", gsub("1a2b3", /[ab]/, "_"), "gsub charclass");
