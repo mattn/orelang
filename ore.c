@@ -49,6 +49,7 @@ extern char **environ;
 "         | \">\" | \"=~\") <bits>)? ;                                   \n" \
 "logic      : <cmpexp> ((\"&&\" | \"||\") <cmpexp>)* ;                   \n" \
 "lexp       : <logic> ('?' <lexp> ':' <lexp>)? ;                         \n" \
+"incdec     : <ident> (\"++\" | \"--\") ;                                \n" \
 "let_o      : (\"=\" | \"+=\" | \"-=\" | \"*=\" | \"/=\" | \"%=\") ;     \n" \
 "let_v      : <ident> <let_o> <lexp> ';' ;                               \n" \
 "let_a      : <item> <let_o> <lexp> ';' ;                                \n" \
@@ -75,7 +76,7 @@ extern char **environ;
 "return     : \"return\" <lexp> ';' ;                                    \n" \
 "comment    : /#[^\n]*/ ;                                                \n" \
 "eof        : /$/ ;                                                      \n" \
-"stmt       : (<let_v> | <let_a> | <let_p> | <var> | <if>                  " \
+"stmt       : (<let_v> | <let_a> | <let_p> | <incdec> ';' | <var> | <if>   " \
 "         | <while> | <for_in>                                             " \
 "         | <func> | <class_ext> | <class> | <return> | <break>          \n" \
 "         | <continue> | <lexp> ';' | <comment>) ;                       \n" \
@@ -91,7 +92,7 @@ enum {
   ORE_TAG_REGEXP, ORE_TAG_ITEM, ORE_TAG_PROP, ORE_TAG_IDENT,
   ORE_TAG_CALL, ORE_TAG_NEW, ORE_TAG_LAMBDA,
   ORE_TAG_FACTOR, ORE_TAG_LEXP_TERM,
-  ORE_TAG_LET_V, ORE_TAG_LET_A, ORE_TAG_LET_P,
+  ORE_TAG_LET_V, ORE_TAG_LET_A, ORE_TAG_LET_P, ORE_TAG_INCDEC,
   ORE_TAG_VAR, ORE_TAG_FUNC,
   ORE_TAG_CLASS_EXT, ORE_TAG_CLASS,
   ORE_TAG_RETURN, ORE_TAG_BREAK, ORE_TAG_CONTINUE,
@@ -121,6 +122,7 @@ ore_classify_tag(mpc_ast_t* t) {
   if (is_a(t, "lexp") || is_a(t, "term") || is_a(t, "arith") ||
       is_a(t, "cmpexp") || is_a(t, "logic") ||
       is_a(t, "pows") || is_a(t, "bits")) return ORE_TAG_LEXP_TERM;
+  if (is_a(t, "incdec")) return ORE_TAG_INCDEC;
   if (is_a(t, "let_v")) return ORE_TAG_LET_V;
   if (is_a(t, "let_a")) return ORE_TAG_LET_A;
   if (is_a(t, "let_p")) return ORE_TAG_LET_P;
@@ -2481,6 +2483,24 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
       return ore_eval(ore, ore_is_true(c) ? t->children[2] : t->children[4]);
     }
     return ore_expr(ore, t);
+  case ORE_TAG_INCDEC:
+    {
+      const char* name = t->children[0]->contents;
+      ore_value v = ore_get(ore, name);
+      if (ore->err != ORE_ERROR_NONE)
+        return ore_value_nil();
+      int inc = t->children[1]->contents[0] == '+';
+      if (v.t == ORE_TYPE_INT) v.v.i += inc ? 1 : -1;
+      else if (v.t == ORE_TYPE_FLOAT) v.v.d += inc ? 1 : -1;
+      else {
+        fprintf(stderr, "unknown operator '%s' for %s\n",
+          t->children[1]->contents, ore_kind(v));
+        ore->err = ORE_ERROR_EXCEPTION;
+        return ore_value_nil();
+      }
+      ore_set(ore, name, v);
+      return v;
+    }
   case ORE_TAG_LET_V:
     {
       const char* op = t->children[1]->contents;
@@ -2797,6 +2817,7 @@ main(int argc, char **argv) {
   mpc_parser_t* m_item       = mpc_new("item");
   mpc_parser_t* m_prop       = mpc_new("prop");
   mpc_parser_t* m_lexp       = mpc_new("lexp");
+  mpc_parser_t* m_incdec     = mpc_new("incdec");
   mpc_parser_t* m_leto       = mpc_new("let_o");
   mpc_parser_t* m_letv       = mpc_new("let_v");
   mpc_parser_t* m_leta       = mpc_new("let_a");
@@ -2850,6 +2871,7 @@ m_lexp,\
 m_value,\
 m_item,\
 m_prop,\
+m_incdec,\
 m_leto,\
 m_leta,\
 m_letv,\
@@ -2978,7 +3000,7 @@ m_program
   ore_destroy(ore);
 
 leave:
-  mpc_cleanup(51, NODES);
+  mpc_cleanup(52, NODES);
   return 0;
 }
 
