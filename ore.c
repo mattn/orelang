@@ -1304,6 +1304,95 @@ ore_cfunc_pow(ore_context* ore, int num_in, ore_value* args, void* u) {
 }
 
 static ore_value
+ore_cfunc_read_file(ore_context* ore, int num_in, ore_value* args, void* u) {
+  if (args[0].t != ORE_TYPE_STRING) {
+    fprintf(stderr, "argument should be string\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  FILE* fp = fopen(args[0].v.s->p, "rb");
+  if (!fp) {
+    fprintf(stderr, "cannot open file '%s'\n", args[0].v.s->p);
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  fseek(fp, 0, SEEK_END);
+  long size = ftell(fp);
+  fseek(fp, 0, SEEK_SET);
+  if (size < 0) size = 0;
+  char* p = calloc(1, size + 1);
+  if (!p) {
+    fclose(fp);
+    fprintf(stderr, "failed to allocate memory\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  size_t n = fread(p, 1, size, fp);
+  fclose(fp);
+  return ore_value_str_from_ptr(ore, p, (int) n);
+}
+
+static ore_value
+ore_write_file(ore_context* ore, ore_value* args, const char* mode) {
+  if (args[0].t != ORE_TYPE_STRING || args[1].t != ORE_TYPE_STRING) {
+    fprintf(stderr, "arguments should be string\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  FILE* fp = fopen(args[0].v.s->p, mode);
+  if (!fp) {
+    fprintf(stderr, "cannot open file '%s'\n", args[0].v.s->p);
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  size_t n = fwrite(args[1].v.s->p, 1, args[1].v.s->l, fp);
+  fclose(fp);
+  return n == (size_t) args[1].v.s->l ? ore_value_true() : ore_value_false();
+}
+
+static ore_value
+ore_cfunc_write_file(ore_context* ore, int num_in, ore_value* args, void* u) {
+  return ore_write_file(ore, args, "wb");
+}
+
+static ore_value
+ore_cfunc_append_file(ore_context* ore, int num_in, ore_value* args, void* u) {
+  return ore_write_file(ore, args, "ab");
+}
+
+static ore_value
+ore_cfunc_remove_file(ore_context* ore, int num_in, ore_value* args, void* u) {
+  if (args[0].t != ORE_TYPE_STRING) {
+    fprintf(stderr, "argument should be string\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  return remove(args[0].v.s->p) == 0 ? ore_value_true() : ore_value_false();
+}
+
+static ore_value
+ore_cfunc_readline(ore_context* ore, int num_in, ore_value* args, void* u) {
+  kstring_t ks = { 0, 0, NULL };
+  char buf[256];
+  for (;;) {
+    if (!fgets(buf, sizeof(buf), stdin)) {
+      if (ks.s == NULL)
+        return ore_value_nil();
+      break;
+    }
+    size_t l = strlen(buf);
+    if (l > 0 && buf[l-1] == '\n') {
+      kputsn(buf, l - 1, &ks);
+      break;
+    }
+    kputsn(buf, l, &ks);
+  }
+  if (ks.s == NULL)
+    return ore_value_str_from_ptr(ore, calloc(1, 1), 0);
+  return ore_value_str_from_ptr(ore, ks.s, ks.l);
+}
+
+static ore_value
 ore_cfunc_typeof(ore_context* ore, int num_in, ore_value* args, void* u) {
   return ore_value_str_from_ptr(ore, (char*) ore_kind(args[0]), -1);
 }
@@ -3076,6 +3165,11 @@ m_program
   ore_define_cfunc(ore, "round", 1, 1, ore_cfunc_round, NULL);
   ore_define_cfunc(ore, "sqrt", 1, 1, ore_cfunc_sqrt, NULL);
   ore_define_cfunc(ore, "pow", 2, 2, ore_cfunc_pow, NULL);
+  ore_define_cfunc(ore, "read_file", 1, 1, ore_cfunc_read_file, NULL);
+  ore_define_cfunc(ore, "write_file", 2, 2, ore_cfunc_write_file, NULL);
+  ore_define_cfunc(ore, "append_file", 2, 2, ore_cfunc_append_file, NULL);
+  ore_define_cfunc(ore, "remove_file", 1, 1, ore_cfunc_remove_file, NULL);
+  ore_define_cfunc(ore, "readline", 0, 0, ore_cfunc_readline, NULL);
   ore_define_cfunc(ore, "typeof", 1, 1, ore_cfunc_typeof, NULL);
   ore_define_cfunc(ore, "load", 1, 1, ore_cfunc_load, &pc);
   ore_define_cfunc(ore, "environ", 0, 1, ore_cfunc_environ, &pc);
