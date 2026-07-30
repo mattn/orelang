@@ -41,10 +41,12 @@ extern char **environ;
 "pair       : <string> ':' <lexp> ;                                      \n" \
 "hash       : '{' <pair>? (',' <pair>)* '}' ;                            \n" \
 "ident      : /[a-zA-Z_][a-zA-Z0-9_]*/ ;                                 \n" \
-"term       : (<lambda> | <postfix> (('*' | '/' | '%') <postfix>)*) ;    \n" \
+"pows       : <postfix> (\"**\" <pows>)? ;                               \n" \
+"term       : (<lambda> | <pows> (('*' | '/' | '%') <pows>)*) ;          \n" \
 "arith      : <term> (('+' | '-') <term>)* ;                             \n" \
-"cmpexp     : <arith> ((\"!=\" | \"==\" | \"<=\" | \"<\" | \">=\"          " \
-"         | \">\" | \"=~\") <arith>)? ;                                  \n" \
+"bits       : <arith> ((\"<<\" | \">>\" | '&' | '^' | '|') <arith>)* ;   \n" \
+"cmpexp     : <bits> ((\"!=\" | \"==\" | \"<=\" | \"<\" | \">=\"           " \
+"         | \">\" | \"=~\") <bits>)? ;                                   \n" \
 "logic      : <cmpexp> ((\"&&\" | \"||\") <cmpexp>)* ;                   \n" \
 "lexp       : <logic> ('?' <lexp> ':' <lexp>)? ;                         \n" \
 "let_o      : (\"=\" | \"+=\" | \"-=\" | \"*=\" | \"/=\" | \"%=\") ;     \n" \
@@ -117,7 +119,8 @@ ore_classify_tag(mpc_ast_t* t) {
   if (is_a(t, "lambda")) return ORE_TAG_LAMBDA;
   if (is_a(t, "factor")) return ORE_TAG_FACTOR;
   if (is_a(t, "lexp") || is_a(t, "term") || is_a(t, "arith") ||
-      is_a(t, "cmpexp") || is_a(t, "logic")) return ORE_TAG_LEXP_TERM;
+      is_a(t, "cmpexp") || is_a(t, "logic") ||
+      is_a(t, "pows") || is_a(t, "bits")) return ORE_TAG_LEXP_TERM;
   if (is_a(t, "let_v")) return ORE_TAG_LET_V;
   if (is_a(t, "let_a")) return ORE_TAG_LET_A;
   if (is_a(t, "let_p")) return ORE_TAG_LET_P;
@@ -2080,7 +2083,27 @@ ore_expr0(ore_context* ore, ore_value lhs, const char* op, ore_value rhs) {
       if (rhs.t == ORE_TYPE_INT || rhs.t== ORE_TYPE_FLOAT)
       {
         int iv = rhs.t == ORE_TYPE_INT ? rhs.v.i : rhs.t == ORE_TYPE_FLOAT ? (int) rhs.v.d : 0;
-        if (*op == '+') { lhs.v.i += iv; }
+        if (op[0] == '*' && op[1] == '*') {
+          if (iv < 0) {
+            double d = pow((double) lhs.v.i, (double) iv);
+            lhs.t = ORE_TYPE_FLOAT;
+            lhs.v.d = d;
+          } else {
+            int r = 1, b = lhs.v.i, e = iv;
+            while (e > 0) {
+              if (e & 1) r *= b;
+              b *= b;
+              e >>= 1;
+            }
+            lhs.v.i = r;
+          }
+        }
+        else if (!strcmp(op, "<<")) { lhs.v.i <<= iv; }
+        else if (!strcmp(op, ">>")) { lhs.v.i >>= iv; }
+        else if (!strcmp(op, "&")) { lhs.v.i &= iv; }
+        else if (!strcmp(op, "^")) { lhs.v.i ^= iv; }
+        else if (!strcmp(op, "|")) { lhs.v.i |= iv; }
+        else if (*op == '+') { lhs.v.i += iv; }
         else if (*op == '-') { lhs.v.i -= iv; }
         else if (*op == '*') { lhs.v.i *= iv; }
         else if (*op == '/' || *op == '%') {
@@ -2107,7 +2130,8 @@ ore_expr0(ore_context* ore, ore_value lhs, const char* op, ore_value rhs) {
       if (rhs.t == ORE_TYPE_INT || rhs.t== ORE_TYPE_FLOAT)
       {
         double fv = rhs.t == ORE_TYPE_INT ? (double) rhs.v.i : rhs.t == ORE_TYPE_FLOAT ? rhs.v.d : 0;
-        if (*op == '+') { lhs.v.d += fv; }
+        if (op[0] == '*' && op[1] == '*') { lhs.v.d = pow(lhs.v.d, fv); }
+        else if (*op == '+') { lhs.v.d += fv; }
         else if (*op == '-') { lhs.v.d -= fv; }
         else if (*op == '*') { lhs.v.d *= fv; }
         else if (*op == '/') { lhs.v.d /= fv; }
@@ -2763,8 +2787,10 @@ main(int argc, char **argv) {
   mpc_parser_t* m_regexp     = mpc_new("regexp");
   mpc_parser_t* m_ident      = mpc_new("ident");
   mpc_parser_t* m_postfix    = mpc_new("postfix");
+  mpc_parser_t* m_pows       = mpc_new("pows");
   mpc_parser_t* m_term       = mpc_new("term");
   mpc_parser_t* m_arith      = mpc_new("arith");
+  mpc_parser_t* m_bits       = mpc_new("bits");
   mpc_parser_t* m_cmpexp     = mpc_new("cmpexp");
   mpc_parser_t* m_logic      = mpc_new("logic");
   mpc_parser_t* m_value      = mpc_new("value");
@@ -2814,8 +2840,10 @@ m_hash,\
 m_regexp,\
 m_ident,\
 m_postfix,\
+m_pows,\
 m_term,\
 m_arith,\
+m_bits,\
 m_cmpexp,\
 m_logic,\
 m_lexp,\
@@ -2950,7 +2978,7 @@ m_program
   ore_destroy(ore);
 
 leave:
-  mpc_cleanup(49, NODES);
+  mpc_cleanup(51, NODES);
   return 0;
 }
 
