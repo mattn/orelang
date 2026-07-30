@@ -22,6 +22,23 @@ ok(1 >= 1, "1 >= 1");
 ok(2 >= 1, "2 >= 1");
 ok(1.0 >= 1.0, "1.0 >= 1.0");
 
+ok(true && true, "true && true");
+ok(!(true && false), "!(true && false)");
+ok(true || false, "true || false");
+ok(!false, "!false");
+ok(!0, "!0");
+ok(1 < 2 && 2 < 3, "1 < 2 && 2 < 3");
+ok(1 > 2 || 5 == 5, "1 > 2 || 5 == 5");
+ok(false && boom() || true, "short circuit &&");
+
+x = 5;
+is(-5, -x, "unary minus");
+y = 1.5;
+is(-1.5, -y, "unary minus float");
+
+a = 7; a %= 3;
+is(1, a, "%=");
+
 h = {"a": 1};
 ok(h["a"] == 1, "h[\"a\"] == 1");
 arr = [2,3];
