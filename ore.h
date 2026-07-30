@@ -123,6 +123,7 @@ typedef struct _ore_context {
   struct _ore_context* parent;
   void* c;
   int err;
+  ore_value exc;
   ore_ast_t* ast;
   ore_tag_cache_t* tags;
 } ore_context;
