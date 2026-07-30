@@ -31,4 +31,16 @@ is("", trim("   "), "trim all space");
 is("e", s[1], "string index");
 is("h", s[0], "string index 0");
 
+name = "world";
+is("hello world", "hello ${name}", "interpolation");
+n = 42;
+is("n=42", "n=${n}", "interpolation int");
+dollar_name = "$" + "{name}";
+is(dollar_name, '${name}', "no interp in single quotes");
+is(dollar_name, "\${name}", "escaped dollar");
+is("a{b", "a{b", "lone brace");
+x1 = 1;
+x2 = 2;
+is("1-2", "${x1}-${x2}", "multiple interpolations");
+
 # vim: set ft=ore:
