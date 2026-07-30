@@ -1,0 +1,34 @@
+s = "hello world";
+is("ello", substr(s, 1, 4), "substr");
+is("world", substr(s, 6, 100), "substr clamp");
+is("", substr(s, 100, 1), "substr out of range");
+
+is(6, index(s, "world"), "index found");
+is(-1, index(s, "xyz"), "index missing");
+is(0, index(s, "he"), "index head");
+
+p = split("a,b,c", ",");
+is(3, len(p), "split len");
+is("a", p[0], "split 0");
+is("c", p[2], "split 2");
+
+q = split("abc", "");
+is(3, len(q), "split chars len");
+is("b", q[1], "split chars 1");
+
+is("a-b-c", join(["a", "b", "c"], "-"), "join");
+is("1,2", join([1, 2], ","), "join numbers");
+is("", join([], "-"), "join empty");
+
+is("heLLo", replace("hello", "l", "L"), "replace");
+is("hello", replace("hello", "z", "x"), "replace none");
+
+is("ABC", upper("aBc"), "upper");
+is("abc", lower("aBc"), "lower");
+is("hi", trim("  hi  "), "trim");
+is("", trim("   "), "trim all space");
+
+is("e", s[1], "string index");
+is("h", s[0], "string index 0");
+
+# vim: set ft=ore:

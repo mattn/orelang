@@ -1,5 +1,6 @@
 #include "ore.h"
 #include <math.h>
+#include <ctype.h>
 
 #ifdef _WIN32
 #include <stdlib.h>
@@ -160,6 +161,7 @@ KHASH_MAP_INIT_STR(cfunc, ore_cfunc_t)
 
 static ore_value ore_call(ore_context*, mpc_ast_t*);
 static ore_value ore_eval(ore_context*, mpc_ast_t*);
+static char* ore_value_to_str(ore_context*, ore_value);
 
 static void
 ore_init_func(ore_func* fn, ore_context* ore, mpc_ast_t* t) {
@@ -992,6 +994,182 @@ ore_cfunc_sort(ore_context* ore, int num_in, ore_value* args, void* u) {
   }
   free(buf);
   return ore_value_array_from_klist(ore, r);
+}
+
+static ore_value
+ore_cfunc_substr(ore_context* ore, int num_in, ore_value* args, void* u) {
+  if (args[0].t != ORE_TYPE_STRING ||
+      args[1].t != ORE_TYPE_INT || args[2].t != ORE_TYPE_INT) {
+    fprintf(stderr, "arguments should be string, int, int\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  int l = args[0].v.s->l;
+  int from = args[1].v.i;
+  int n = args[2].v.i;
+  if (from < 0) from = 0;
+  if (from > l) from = l;
+  if (n < 0 || from + n > l) n = l - from;
+  char* p = calloc(1, n + 1);
+  if (!p) {
+    fprintf(stderr, "failed to allocate memory\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  memcpy(p, args[0].v.s->p + from, n);
+  return ore_value_str_from_ptr(ore, p, n);
+}
+
+static ore_value
+ore_cfunc_index(ore_context* ore, int num_in, ore_value* args, void* u) {
+  if (args[0].t != ORE_TYPE_STRING || args[1].t != ORE_TYPE_STRING) {
+    fprintf(stderr, "arguments should be string\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  ore_value v = { ORE_TYPE_INT };
+  const char* found = strstr(args[0].v.s->p, args[1].v.s->p);
+  v.v.i = found ? (int) (found - args[0].v.s->p) : -1;
+  return v;
+}
+
+static ore_value
+ore_cfunc_split(ore_context* ore, int num_in, ore_value* args, void* u) {
+  if (args[0].t != ORE_TYPE_STRING || args[1].t != ORE_TYPE_STRING) {
+    fprintf(stderr, "arguments should be string\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  const char* s = args[0].v.s->p;
+  const char* sep = args[1].v.s->p;
+  int seplen = args[1].v.s->l;
+  ore_array_t* a = kl_init(value);
+  if (seplen == 0) {
+    while (*s) {
+      char* p = calloc(1, 2);
+      p[0] = *s;
+      *kl_pushp(value, a) = ore_value_str_from_ptr(ore, p, 1);
+      s++;
+    }
+  } else {
+    for (;;) {
+      const char* found = strstr(s, sep);
+      int n = found ? (int) (found - s) : (int) strlen(s);
+      char* p = calloc(1, n + 1);
+      memcpy(p, s, n);
+      *kl_pushp(value, a) = ore_value_str_from_ptr(ore, p, n);
+      if (!found) break;
+      s = found + seplen;
+    }
+  }
+  return ore_value_array_from_klist(ore, a);
+}
+
+static ore_value
+ore_cfunc_join(ore_context* ore, int num_in, ore_value* args, void* u) {
+  if (args[0].t != ORE_TYPE_ARRAY || args[1].t != ORE_TYPE_STRING) {
+    fprintf(stderr, "arguments should be array and string\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  ore_array_t* a = (ore_array_t*) args[0].v.a->p;
+  kstring_t ks = { 0, 0, NULL };
+  ore_array_iter_t* k;
+  ore_array_iter_t* b = kl_begin(a);
+  for (k = b; k != kl_end(a); k = kl_next(k)) {
+    if (k != b) kputs(args[1].v.s->p, &ks);
+    char* s = ore_value_to_str(ore, kl_val(k));
+    kputs(s, &ks);
+    free(s);
+  }
+  if (ks.s == NULL)
+    return ore_value_str_from_ptr(ore, calloc(1, 1), 0);
+  return ore_value_str_from_ptr(ore, ks.s, ks.l);
+}
+
+static ore_value
+ore_cfunc_replace(ore_context* ore, int num_in, ore_value* args, void* u) {
+  if (args[0].t != ORE_TYPE_STRING ||
+      args[1].t != ORE_TYPE_STRING || args[2].t != ORE_TYPE_STRING) {
+    fprintf(stderr, "arguments should be string\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  const char* s = args[0].v.s->p;
+  const char* old = args[1].v.s->p;
+  int oldlen = args[1].v.s->l;
+  if (oldlen == 0) {
+    fprintf(stderr, "empty search string\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  kstring_t ks = { 0, 0, NULL };
+  for (;;) {
+    const char* found = strstr(s, old);
+    if (!found) {
+      kputs(s, &ks);
+      break;
+    }
+    kputsn(s, found - s, &ks);
+    kputs(args[2].v.s->p, &ks);
+    s = found + oldlen;
+  }
+  if (ks.s == NULL)
+    return ore_value_str_from_ptr(ore, calloc(1, 1), 0);
+  return ore_value_str_from_ptr(ore, ks.s, ks.l);
+}
+
+static ore_value
+ore_str_map_case(ore_context* ore, ore_value* args, int up) {
+  if (args[0].t != ORE_TYPE_STRING) {
+    fprintf(stderr, "argument should be string\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  int l = args[0].v.s->l, i;
+  char* p = calloc(1, l + 1);
+  if (!p) {
+    fprintf(stderr, "failed to allocate memory\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  for (i = 0; i < l; i++) {
+    unsigned char c = (unsigned char) args[0].v.s->p[i];
+    p[i] = up ? toupper(c) : tolower(c);
+  }
+  return ore_value_str_from_ptr(ore, p, l);
+}
+
+static ore_value
+ore_cfunc_upper(ore_context* ore, int num_in, ore_value* args, void* u) {
+  return ore_str_map_case(ore, args, 1);
+}
+
+static ore_value
+ore_cfunc_lower(ore_context* ore, int num_in, ore_value* args, void* u) {
+  return ore_str_map_case(ore, args, 0);
+}
+
+static ore_value
+ore_cfunc_trim(ore_context* ore, int num_in, ore_value* args, void* u) {
+  if (args[0].t != ORE_TYPE_STRING) {
+    fprintf(stderr, "argument should be string\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  const char* s = args[0].v.s->p;
+  const char* e = s + args[0].v.s->l;
+  while (s < e && isspace((unsigned char) *s)) s++;
+  while (e > s && isspace((unsigned char) *(e - 1))) e--;
+  int n = (int) (e - s);
+  char* p = calloc(1, n + 1);
+  if (!p) {
+    fprintf(stderr, "failed to allocate memory\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  memcpy(p, s, n);
+  return ore_value_str_from_ptr(ore, p, n);
 }
 
 static ore_value
@@ -2086,6 +2264,22 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
         return ore_value_nil();
       for (i = 2; i < t->children_num; i += 3) {
         ore_value key = ore_eval(ore, t->children[i]);
+        if (v.t == ORE_TYPE_STRING) {
+          if (key.t != ORE_TYPE_INT) {
+            fprintf(stderr, "string index should be int\n");
+            ore->err = ORE_ERROR_EXCEPTION;
+            return ore_value_nil();
+          }
+          if (key.v.i < 0 || key.v.i >= v.v.s->l) {
+            fprintf(stderr, "out of bounds for string\n");
+            ore->err = ORE_ERROR_EXCEPTION;
+            return ore_value_nil();
+          }
+          char* p = calloc(1, 2);
+          p[0] = v.v.s->p[key.v.i];
+          v = ore_value_str_from_ptr(ore, p, 1);
+          continue;
+        }
         ore_value* r = ore_index_ref(ore, v, key, 0);
         v = r == NULL ? ore_value_nil() : *r;
       }
@@ -2561,6 +2755,14 @@ m_program
   ore_define_cfunc(ore, "values", 1, 1, ore_cfunc_values, NULL);
   ore_define_cfunc(ore, "has", 2, 2, ore_cfunc_has, NULL);
   ore_define_cfunc(ore, "delete", 2, 2, ore_cfunc_delete, NULL);
+  ore_define_cfunc(ore, "substr", 3, 3, ore_cfunc_substr, NULL);
+  ore_define_cfunc(ore, "index", 2, 2, ore_cfunc_index, NULL);
+  ore_define_cfunc(ore, "split", 2, 2, ore_cfunc_split, NULL);
+  ore_define_cfunc(ore, "join", 2, 2, ore_cfunc_join, NULL);
+  ore_define_cfunc(ore, "replace", 3, 3, ore_cfunc_replace, NULL);
+  ore_define_cfunc(ore, "upper", 1, 1, ore_cfunc_upper, NULL);
+  ore_define_cfunc(ore, "lower", 1, 1, ore_cfunc_lower, NULL);
+  ore_define_cfunc(ore, "trim", 1, 1, ore_cfunc_trim, NULL);
   ore_define_cfunc(ore, "typeof", 1, 1, ore_cfunc_typeof, NULL);
   ore_define_cfunc(ore, "load", 1, 1, ore_cfunc_load, &pc);
   ore_define_cfunc(ore, "environ", 0, 1, ore_cfunc_environ, &pc);
