@@ -767,12 +767,87 @@ ore_cfunc_len(ore_context* ore, int num_in, ore_value* args, void* u) {
         v.v.i = a->size;
       }
       return v;
+    case ORE_TYPE_HASH:
+      {
+        ore_hash_t* h = (ore_hash_t*) args[0].v.h->p;
+        ore_hash_iter_t k;
+        int n = 0;
+        for (k = kh_begin(h); k != kh_end(h); k++) {
+          if (kh_exist(h, k)) n++;
+        }
+        v.v.i = n;
+      }
+      return v;
     default:
       break;
   }
-  fprintf(stderr, "argument should be string or array\n");
+  fprintf(stderr, "argument should be string, array or hash\n");
   ore->err = ORE_ERROR_EXCEPTION;
   return ore_value_nil();
+}
+
+static ore_value
+ore_cfunc_keys(ore_context* ore, int num_in, ore_value* args, void* u) {
+  if (args[0].t != ORE_TYPE_HASH) {
+    fprintf(stderr, "argument should be hash\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  ore_hash_t* h = (ore_hash_t*) args[0].v.h->p;
+  ore_array_t* a = kl_init(value);
+  ore_hash_iter_t k;
+  for (k = kh_begin(h); k != kh_end(h); k++) {
+    if (!kh_exist(h, k)) continue;
+    char* p = strdup(kh_key(h, k));
+    *kl_pushp(value, a) = ore_value_str_from_ptr(ore, p, -1);
+  }
+  return ore_value_array_from_klist(ore, a);
+}
+
+static ore_value
+ore_cfunc_values(ore_context* ore, int num_in, ore_value* args, void* u) {
+  if (args[0].t != ORE_TYPE_HASH) {
+    fprintf(stderr, "argument should be hash\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  ore_hash_t* h = (ore_hash_t*) args[0].v.h->p;
+  ore_array_t* a = kl_init(value);
+  ore_hash_iter_t k;
+  for (k = kh_begin(h); k != kh_end(h); k++) {
+    if (!kh_exist(h, k)) continue;
+    ore_value_ref(kh_value(h, k));
+    *kl_pushp(value, a) = kh_value(h, k);
+  }
+  return ore_value_array_from_klist(ore, a);
+}
+
+static ore_value
+ore_cfunc_has(ore_context* ore, int num_in, ore_value* args, void* u) {
+  if (args[0].t != ORE_TYPE_HASH || args[1].t != ORE_TYPE_STRING) {
+    fprintf(stderr, "arguments should be hash and string\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  ore_hash_t* h = (ore_hash_t*) args[0].v.h->p;
+  khint_t k = kh_get(value, h, args[1].v.s->p);
+  return k != kh_end(h) ? ore_value_true() : ore_value_false();
+}
+
+static ore_value
+ore_cfunc_delete(ore_context* ore, int num_in, ore_value* args, void* u) {
+  if (args[0].t != ORE_TYPE_HASH || args[1].t != ORE_TYPE_STRING) {
+    fprintf(stderr, "arguments should be hash and string\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  ore_hash_t* h = (ore_hash_t*) args[0].v.h->p;
+  khint_t k = kh_get(value, h, args[1].v.s->p);
+  if (k == kh_end(h))
+    return ore_value_false();
+  ore_value_unref(kh_value(h, k));
+  kh_del(value, h, k);
+  return ore_value_true();
 }
 
 static ore_value
@@ -2214,8 +2289,34 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   case ORE_TAG_FOR_IN:
     {
       ore_value l = ore_eval(ore, t->children[4]);
+      if (l.t == ORE_TYPE_HASH) {
+        ore_hash_t* h = (ore_hash_t*) l.v.h->p;
+        ore_hash_iter_t hk;
+        ore_context* env = ore_new(ore);
+        ore_value v = ore_value_nil();
+        for (hk = kh_begin(h); hk != kh_end(h); hk++) {
+          if (!kh_exist(h, hk)) continue;
+          char* p = strdup(kh_key(h, hk));
+          ore_define(env, t->children[2]->contents, ore_value_str_from_ptr(ore, p, -1));
+          v = ore_eval(env, ore_find_statements(t));
+          if (env->err != ORE_ERROR_NONE) {
+            if (env->err == ORE_ERROR_CONTINUE) {
+              env->err = ORE_ERROR_NONE;
+              continue;
+            }
+            break;
+          }
+        }
+        if (env->err == ORE_ERROR_RETURN || env->err == ORE_ERROR_EXCEPTION) {
+          ore->err = env->err;
+          ore_destroy(env);
+          return v;
+        }
+        ore_destroy(env);
+        return ore_value_nil();
+      }
       if (l.t != ORE_TYPE_ARRAY) {
-        fprintf(stderr, "expected array for argument\n");
+        fprintf(stderr, "expected array or hash for argument\n");
         ore->err = ORE_ERROR_EXCEPTION;
         return ore_value_nil();
       }
@@ -2456,6 +2557,10 @@ m_program
   ore_define_cfunc(ore, "pop", 1, 1, ore_cfunc_pop, NULL);
   ore_define_cfunc(ore, "slice", 3, 3, ore_cfunc_slice, NULL);
   ore_define_cfunc(ore, "sort", 1, 1, ore_cfunc_sort, NULL);
+  ore_define_cfunc(ore, "keys", 1, 1, ore_cfunc_keys, NULL);
+  ore_define_cfunc(ore, "values", 1, 1, ore_cfunc_values, NULL);
+  ore_define_cfunc(ore, "has", 2, 2, ore_cfunc_has, NULL);
+  ore_define_cfunc(ore, "delete", 2, 2, ore_cfunc_delete, NULL);
   ore_define_cfunc(ore, "typeof", 1, 1, ore_cfunc_typeof, NULL);
   ore_define_cfunc(ore, "load", 1, 1, ore_cfunc_load, &pc);
   ore_define_cfunc(ore, "environ", 0, 1, ore_cfunc_environ, &pc);

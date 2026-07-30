@@ -24,4 +24,35 @@ arr = [1,2,3];
 arr[0] += 10;
 is(11, arr[0], "array compound assign");
 
+d = {"a": 1, "b": 2};
+is(2, len(d), "len hash");
+
+ks = sort(keys(d));
+is(2, len(ks), "keys len");
+is("a", ks[0], "keys 0");
+is("b", ks[1], "keys 1");
+
+vs = sort(values(d));
+is(1, vs[0], "values 0");
+is(2, vs[1], "values 1");
+
+ok(has(d, "a"), "has existing");
+ok(!has(d, "zz"), "has missing");
+
+ok(delete(d, "a"), "delete existing");
+ok(!has(d, "a"), "deleted");
+is(1, len(d), "len after delete");
+ok(!delete(d, "zz"), "delete missing");
+
+total = 0;
+cnt = 0;
+for (k in {"p": 10, "q": 20}) {
+  cnt += 1;
+  if (k == "p" || k == "q") {
+    total += 1;
+  }
+}
+is(2, cnt, "for-in hash count");
+is(2, total, "for-in hash keys");
+
 # vim: set ft=ore:
