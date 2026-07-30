@@ -50,7 +50,8 @@ extern char **environ;
 "logic      : <cmpexp> ((\"&&\" | \"||\") <cmpexp>)* ;                   \n" \
 "lexp       : <logic> ('?' <lexp> ':' <lexp>)? ;                         \n" \
 "incdec     : <ident> (\"++\" | \"--\") ;                                \n" \
-"let_o      : (\"=\" | \"+=\" | \"-=\" | \"*=\" | \"/=\" | \"%=\") ;     \n" \
+"let_o      : (\"=\" | \"+=\" | \"-=\" | \"**=\" | \"*=\" | \"/=\"         " \
+"         | \"%=\" | \"<<=\" | \">>=\" | \"&=\" | \"|=\" | \"^=\") ;     \n" \
 "let_v      : <ident> <let_o> <lexp> ';' ;                               \n" \
 "let_a      : <item> <let_o> <lexp> ';' ;                                \n" \
 "let_p      : <prop> <let_o> <lexp> ';' ;                                \n" \
