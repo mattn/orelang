@@ -45,7 +45,8 @@ extern char **environ;
 "arith      : <term> (('+' | '-') <term>)* ;                             \n" \
 "cmpexp     : <arith> ((\"!=\" | \"==\" | \"<=\" | \"<\" | \">=\"          " \
 "         | \">\" | \"=~\") <arith>)? ;                                  \n" \
-"lexp       : <cmpexp> ((\"&&\" | \"||\") <cmpexp>)* ;                   \n" \
+"logic      : <cmpexp> ((\"&&\" | \"||\") <cmpexp>)* ;                   \n" \
+"lexp       : <logic> ('?' <lexp> ':' <lexp>)? ;                         \n" \
 "let_o      : (\"=\" | \"+=\" | \"-=\" | \"*=\" | \"/=\" | \"%=\") ;     \n" \
 "let_v      : <ident> <let_o> <lexp> ';' ;                               \n" \
 "let_a      : <item> <let_o> <lexp> ';' ;                                \n" \
@@ -115,7 +116,8 @@ ore_classify_tag(mpc_ast_t* t) {
   if (is_a(t, "new")) return ORE_TAG_NEW;
   if (is_a(t, "lambda")) return ORE_TAG_LAMBDA;
   if (is_a(t, "factor")) return ORE_TAG_FACTOR;
-  if (is_a(t, "lexp") || is_a(t, "term") || is_a(t, "arith") || is_a(t, "cmpexp")) return ORE_TAG_LEXP_TERM;
+  if (is_a(t, "lexp") || is_a(t, "term") || is_a(t, "arith") ||
+      is_a(t, "cmpexp") || is_a(t, "logic")) return ORE_TAG_LEXP_TERM;
   if (is_a(t, "let_v")) return ORE_TAG_LET_V;
   if (is_a(t, "let_a")) return ORE_TAG_LET_A;
   if (is_a(t, "let_p")) return ORE_TAG_LET_P;
@@ -2447,6 +2449,13 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     }
     return ore_eval(ore, t->children[1]);
   case ORE_TAG_LEXP_TERM:
+    if (t->children_num == 5 &&
+        is_a(t->children[1], "char") && t->children[1]->contents[0] == '?') {
+      ore_value c = ore_eval(ore, t->children[0]);
+      if (ore->err != ORE_ERROR_NONE)
+        return ore_value_nil();
+      return ore_eval(ore, ore_is_true(c) ? t->children[2] : t->children[4]);
+    }
     return ore_expr(ore, t);
   case ORE_TAG_LET_V:
     {
@@ -2757,6 +2766,7 @@ main(int argc, char **argv) {
   mpc_parser_t* m_term       = mpc_new("term");
   mpc_parser_t* m_arith      = mpc_new("arith");
   mpc_parser_t* m_cmpexp     = mpc_new("cmpexp");
+  mpc_parser_t* m_logic      = mpc_new("logic");
   mpc_parser_t* m_value      = mpc_new("value");
   mpc_parser_t* m_item       = mpc_new("item");
   mpc_parser_t* m_prop       = mpc_new("prop");
@@ -2807,6 +2817,7 @@ m_postfix,\
 m_term,\
 m_arith,\
 m_cmpexp,\
+m_logic,\
 m_lexp,\
 m_value,\
 m_item,\
@@ -2939,7 +2950,7 @@ m_program
   ore_destroy(ore);
 
 leave:
-  mpc_cleanup(48, NODES);
+  mpc_cleanup(49, NODES);
   return 0;
 }
 
