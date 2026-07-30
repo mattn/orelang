@@ -18,3 +18,17 @@ var x = ((func(x) {
 is("Yay! hello world", x, "...");
 
 # vim: set ft=ore:
+
+func va(a...) { return len(a); }
+is(0, va(), "vararg empty");
+is(3, va(1, 2, 3), "vararg three");
+
+func mv(first, rest...) { return [first, len(rest)]; }
+r = mv(10, 20, 30);
+is(10, r[0], "mixed vararg named");
+is(2, r[1], "mixed vararg rest");
+r = mv(10);
+is(0, r[1], "mixed vararg empty rest");
+
+func mv2(a, b, rest...) { return join(rest, ","); }
+is("3,4", mv2(1, 2, 3, 4), "two named plus rest");

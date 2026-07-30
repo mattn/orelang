@@ -66,9 +66,9 @@ extern char **environ;
 "var        : \"var\" <ident> '=' <lexp> ';' ;                           \n" \
 "vararg     : \"...\" ;                                                  \n" \
 "lambda     : \"func\"                                                     " \
-"         '(' <ident>? (<vararg> | (',' <ident>)*) ')' '{' <stmts> '}' ; \n" \
+"         '(' <ident>? (',' <ident>)* <vararg>? ')' '{' <stmts> '}' ;    \n" \
 "func       : \"func\" <ident>                                             " \
-"         '(' <ident>? (<vararg> | (',' <ident>)*) ')' '{' <stmts> '}' ; \n" \
+"         '(' <ident>? (',' <ident>)* <vararg>? ')' '{' <stmts> '}' ;    \n" \
 "template   : (<var> | <func>)* ;                                        \n" \
 "class      : \"class\" <ident> '{' <template> '}' ;                     \n" \
 "class_ext  : \"class\" <ident> \"extends\" <ident> '{' <template> '}' ; \n" \
@@ -215,7 +215,7 @@ ore_init_func(ore_func* fn, ore_context* ore, mpc_ast_t* t) {
     }
   }
 
-  fn->num_in = argc;
+  fn->num_in = vararg ? argc - 1 : argc;
   fn->max_in = vararg ? -1 : argc;
 }
 
@@ -590,17 +590,19 @@ ore_bind_args(ore_context* ore, mpc_ast_t* f, ore_context* this, mpc_ast_t* t) {
   ore_init_func(&fn, NULL, f);
   n = 0;
   for (i = fn.args_begin; i >= 0 && i < fn.args_end; i++) {
-    if (is_a(f->children[i], "vararg")) {
+    mpc_ast_t* c = f->children[i];
+    if (!is_a(c, "ident")) continue;
+    if (i + 1 < fn.args_end && is_a(f->children[i+1], "vararg")) {
       ore_array_t* a = kl_init(value);
       int j;
-      for (j = 0; j < num_in; j++) {
+      for (j = n; j < num_in; j++) {
         *kl_pushp(value, a) = args[j];
       }
-      ore_define(this, f->children[i-1]->contents, ore_value_array_from_klist(ore, a));
-    } else if (is_a(f->children[i], "ident")) {
-      if (n < num_in)
-        ore_define(this, f->children[i]->contents, args[n++]);
+      ore_define(this, c->contents, ore_value_array_from_klist(ore, a));
+      break;
     }
+    if (n < num_in)
+      ore_define(this, c->contents, args[n++]);
   }
   return args;
 }
@@ -2194,17 +2196,19 @@ ore_func_call(ore_context* ore, ore_value fn, int num_in, ore_value* args) {
   mpc_ast_t* f = fn.v.f.x.o;
   int n = 0, i;
   for (i = fn.v.f.args_begin; i >= 0 && i < fn.v.f.args_end; i++) {
-    if (is_a(f->children[i], "vararg")) {
+    mpc_ast_t* c = f->children[i];
+    if (!is_a(c, "ident")) continue;
+    if (i + 1 < fn.v.f.args_end && is_a(f->children[i+1], "vararg")) {
       ore_array_t* a = kl_init(value);
       int j;
-      for (j = 0; j < num_in; j++) {
+      for (j = n; j < num_in; j++) {
         *kl_pushp(value, a) = args[j];
       }
-      ore_define(env, f->children[i-1]->contents, ore_value_array_from_klist(ore, a));
-    } else if (is_a(f->children[i], "ident")) {
-      if (n < num_in)
-        ore_define(env, f->children[i]->contents, args[n++]);
+      ore_define(env, c->contents, ore_value_array_from_klist(ore, a));
+      break;
     }
+    if (n < num_in)
+      ore_define(env, c->contents, args[n++]);
   }
   ore_value v = ore_value_nil();
   if (fn.v.f.body) {
