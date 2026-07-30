@@ -1,0 +1,11 @@
+var pub = 42;
+
+func add(a, b) {
+  return a + b;
+}
+
+func greet(name) {
+  return "hi " + name;
+}
+
+# vim: set ft=ore:

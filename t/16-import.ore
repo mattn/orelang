@@ -1,0 +1,18 @@
+import "t/lib/mymod.ore" as m;
+is(42, m.pub, "module var");
+is(3, m.add(1, 2), "module func");
+is("hi ore", m.greet("ore"), "module func str");
+
+import "t/lib/mymod.ore";
+is(5, add(2, 3), "global import");
+is(42, pub, "global import var");
+
+caught = false;
+try {
+  import "t/lib/no_such_mod.ore" as x;
+} catch {
+  caught = true;
+}
+ok(caught, "import missing file raises");
+
+# vim: set ft=ore:
