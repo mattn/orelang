@@ -2095,29 +2095,32 @@ ore_expr0(ore_context* ore, ore_value lhs, const char* op, ore_value rhs) {
       if (rhs.t == ORE_TYPE_INT || rhs.t== ORE_TYPE_FLOAT)
       {
         int iv = rhs.t == ORE_TYPE_INT ? rhs.v.i : rhs.t == ORE_TYPE_FLOAT ? (int) rhs.v.d : 0;
-        if (op[0] == '*' && op[1] == '*') {
-          if (iv < 0) {
-            double d = pow((double) lhs.v.i, (double) iv);
-            lhs.t = ORE_TYPE_FLOAT;
-            lhs.v.d = d;
-          } else {
-            int r = 1, b = lhs.v.i, e = iv;
-            while (e > 0) {
-              if (e & 1) r *= b;
-              b *= b;
-              e >>= 1;
+        if (*op == '+') { lhs.v.i += iv; }
+        else if (*op == '-') { lhs.v.i -= iv; }
+        else if (*op == '*') {
+          if (op[1] == '*') {
+            if (iv < 0) {
+              double d = pow((double) lhs.v.i, (double) iv);
+              lhs.t = ORE_TYPE_FLOAT;
+              lhs.v.d = d;
+            } else {
+              int r = 1, b = lhs.v.i, e = iv;
+              while (e > 0) {
+                if (e & 1) r *= b;
+                b *= b;
+                e >>= 1;
+              }
+              lhs.v.i = r;
             }
-            lhs.v.i = r;
+          } else {
+            lhs.v.i *= iv;
           }
         }
-        else if (!strcmp(op, "<<")) { lhs.v.i <<= iv; }
-        else if (!strcmp(op, ">>")) { lhs.v.i >>= iv; }
-        else if (!strcmp(op, "&")) { lhs.v.i &= iv; }
-        else if (!strcmp(op, "^")) { lhs.v.i ^= iv; }
-        else if (!strcmp(op, "|")) { lhs.v.i |= iv; }
-        else if (*op == '+') { lhs.v.i += iv; }
-        else if (*op == '-') { lhs.v.i -= iv; }
-        else if (*op == '*') { lhs.v.i *= iv; }
+        else if (*op == '<') { lhs.v.i <<= iv; }
+        else if (*op == '>') { lhs.v.i >>= iv; }
+        else if (*op == '&') { lhs.v.i &= iv; }
+        else if (*op == '^') { lhs.v.i ^= iv; }
+        else if (*op == '|') { lhs.v.i |= iv; }
         else if (*op == '/' || *op == '%') {
           if (iv == 0) {
             fprintf(stderr, "division by zero\n");
@@ -2142,10 +2145,12 @@ ore_expr0(ore_context* ore, ore_value lhs, const char* op, ore_value rhs) {
       if (rhs.t == ORE_TYPE_INT || rhs.t== ORE_TYPE_FLOAT)
       {
         double fv = rhs.t == ORE_TYPE_INT ? (double) rhs.v.i : rhs.t == ORE_TYPE_FLOAT ? rhs.v.d : 0;
-        if (op[0] == '*' && op[1] == '*') { lhs.v.d = pow(lhs.v.d, fv); }
-        else if (*op == '+') { lhs.v.d += fv; }
+        if (*op == '+') { lhs.v.d += fv; }
         else if (*op == '-') { lhs.v.d -= fv; }
-        else if (*op == '*') { lhs.v.d *= fv; }
+        else if (*op == '*') {
+          if (op[1] == '*') lhs.v.d = pow(lhs.v.d, fv);
+          else lhs.v.d *= fv;
+        }
         else if (*op == '/') { lhs.v.d /= fv; }
         else if (*op == '%') {
           if (fv == 0) {
@@ -2204,10 +2209,13 @@ ore_expr0(ore_context* ore, ore_value lhs, const char* op, ore_value rhs) {
 
 static int
 ore_is_cmp_op(const char* op) {
-  return !strcmp(op, "==") || !strcmp(op, "!=") ||
-         !strcmp(op, "<") || !strcmp(op, "<=") ||
-         !strcmp(op, ">") || !strcmp(op, ">=") ||
-         !strcmp(op, "=~");
+  switch (op[0]) {
+    case '=': return op[1] == '=' || op[1] == '~';
+    case '!': return op[1] == '=';
+    case '<': return op[1] != '<';
+    case '>': return op[1] != '>';
+  }
+  return 0;
 }
 
 static ore_value ore_cmp(ore_context*, ore_value, char*, ore_value);
@@ -2220,7 +2228,7 @@ ore_expr(ore_context* ore, mpc_ast_t* t) {
     return ore_value_nil();
   for (i = 1; i < t->children_num; i += 2) {
     char* op = t->children[i]->contents;
-    if (!strcmp(op, "&&") || !strcmp(op, "||")) {
+    if ((op[0] == '&' || op[0] == '|') && op[1] == op[0]) {
       int l = ore_is_true(lhs);
       if (*op == '&' ? !l : l) {
         lhs = l ? ore_value_true() : ore_value_false();
