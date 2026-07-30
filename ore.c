@@ -806,6 +806,120 @@ ore_cfunc_range(ore_context* ore, int num_in, ore_value* args, void* u) {
 }
 
 static ore_value
+ore_cfunc_push(ore_context* ore, int num_in, ore_value* args, void* u) {
+  if (args[0].t != ORE_TYPE_ARRAY) {
+    fprintf(stderr, "argument should be array\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  ore_array_t* a = (ore_array_t*) args[0].v.a->p;
+  int i;
+  for (i = 1; i < num_in; i++) {
+    ore_value_ref(args[i]);
+    *kl_pushp(value, a) = args[i];
+  }
+  return args[0];
+}
+
+static ore_value
+ore_cfunc_pop(ore_context* ore, int num_in, ore_value* args, void* u) {
+  if (args[0].t != ORE_TYPE_ARRAY) {
+    fprintf(stderr, "argument should be array\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  ore_array_t* a = (ore_array_t*) args[0].v.a->p;
+  if (a->size == 0)
+    return ore_value_nil();
+  ore_array_iter_t* k = kl_begin(a);
+  while (kl_next(k) != kl_end(a))
+    k = kl_next(k);
+  ore_value last = kl_val(k);
+  kl_val(k) = ore_value_nil();
+  kmp_free(value, a->mp, a->tail);
+  a->tail = k;
+  k->next = 0;
+  a->size--;
+  return last;
+}
+
+static ore_value
+ore_cfunc_slice(ore_context* ore, int num_in, ore_value* args, void* u) {
+  if (args[0].t != ORE_TYPE_ARRAY ||
+      args[1].t != ORE_TYPE_INT || args[2].t != ORE_TYPE_INT) {
+    fprintf(stderr, "arguments should be array, int, int\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  ore_array_t* a = (ore_array_t*) args[0].v.a->p;
+  int from = args[1].v.i, to = args[2].v.i, n = 0;
+  ore_array_t* r = kl_init(value);
+  ore_array_iter_t* k;
+  for (k = kl_begin(a); k != kl_end(a); k = kl_next(k), n++) {
+    if (n < from || n >= to) continue;
+    ore_value_ref(kl_val(k));
+    *kl_pushp(value, r) = kl_val(k);
+  }
+  return ore_value_array_from_klist(ore, r);
+}
+
+static int
+ore_sort_cmp(const void* pa, const void* pb) {
+  const ore_value* x = (const ore_value*) pa;
+  const ore_value* y = (const ore_value*) pb;
+  if (x->t == ORE_TYPE_STRING && y->t == ORE_TYPE_STRING)
+    return strcmp(x->v.s->p, y->v.s->p);
+  double dx = x->t == ORE_TYPE_INT ? (double) x->v.i : x->v.d;
+  double dy = y->t == ORE_TYPE_INT ? (double) y->v.i : y->v.d;
+  return dx < dy ? -1 : dx > dy ? 1 : 0;
+}
+
+static ore_value
+ore_cfunc_sort(ore_context* ore, int num_in, ore_value* args, void* u) {
+  if (args[0].t != ORE_TYPE_ARRAY) {
+    fprintf(stderr, "argument should be array\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  ore_array_t* a = (ore_array_t*) args[0].v.a->p;
+  size_t n = a->size, i = 0;
+  ore_value* buf = (ore_value*) malloc(sizeof(ore_value) * (n ? n : 1));
+  if (!buf) {
+    fprintf(stderr, "failed to allocate memory\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  int numeric = 0, str = 0;
+  ore_array_iter_t* k;
+  for (k = kl_begin(a); k != kl_end(a); k = kl_next(k)) {
+    ore_value v = kl_val(k);
+    if (v.t == ORE_TYPE_INT || v.t == ORE_TYPE_FLOAT) numeric++;
+    else if (v.t == ORE_TYPE_STRING) str++;
+    else {
+      fprintf(stderr, "array is not sortable\n");
+      ore->err = ORE_ERROR_EXCEPTION;
+      free(buf);
+      return ore_value_nil();
+    }
+    buf[i++] = v;
+  }
+  if (numeric && str) {
+    fprintf(stderr, "cannot sort mixed numbers and strings\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    free(buf);
+    return ore_value_nil();
+  }
+  qsort(buf, n, sizeof(ore_value), ore_sort_cmp);
+  ore_array_t* r = kl_init(value);
+  for (i = 0; i < n; i++) {
+    ore_value_ref(buf[i]);
+    *kl_pushp(value, r) = buf[i];
+  }
+  free(buf);
+  return ore_value_array_from_klist(ore, r);
+}
+
+static ore_value
 ore_cfunc_typeof(ore_context* ore, int num_in, ore_value* args, void* u) {
   return ore_value_str_from_ptr(ore, (char*) ore_kind(args[0]), -1);
 }
@@ -2338,6 +2452,10 @@ m_program
   ore_define_cfunc(ore, "puts", 0, -1, ore_cfunc_println, NULL);
   ore_define_cfunc(ore, "len", 1, 1, ore_cfunc_len, NULL);
   ore_define_cfunc(ore, "range", 1, 2, ore_cfunc_range, NULL);
+  ore_define_cfunc(ore, "push", 2, -1, ore_cfunc_push, NULL);
+  ore_define_cfunc(ore, "pop", 1, 1, ore_cfunc_pop, NULL);
+  ore_define_cfunc(ore, "slice", 3, 3, ore_cfunc_slice, NULL);
+  ore_define_cfunc(ore, "sort", 1, 1, ore_cfunc_sort, NULL);
   ore_define_cfunc(ore, "typeof", 1, 1, ore_cfunc_typeof, NULL);
   ore_define_cfunc(ore, "load", 1, 1, ore_cfunc_load, &pc);
   ore_define_cfunc(ore, "environ", 0, 1, ore_cfunc_environ, &pc);
