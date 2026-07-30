@@ -774,6 +774,54 @@ ore_parse_str(ore_context* ore, const char* s) {
 }
 
 static ore_value
+ore_interp_str(ore_context* ore, const char* s) {
+  kstring_t ks = { 0, 0, NULL };
+  size_t rl = strlen(s);
+  const char* p = s + 1;
+  const char* end = s + (rl > 1 ? rl - 1 : 1);
+  while (p < end) {
+    if (*p == '\\' && p + 1 < end) {
+      p++;
+      switch (*p) {
+        case 'b': kputc('\b', &ks); break;
+        case 'f': kputc('\f', &ks); break;
+        case 'r': kputc('\r', &ks); break;
+        case 'n': kputc('\n', &ks); break;
+        case 't': kputc('\t', &ks); break;
+        default: kputc(*p, &ks); break;
+      }
+      p++;
+      continue;
+    }
+    if (*p == '$' && p + 1 < end && *(p + 1) == '{') {
+      const char* q = p + 2;
+      const char* name_end = q;
+      while (name_end < end && *name_end != '}') name_end++;
+      if (name_end < end) {
+        char* name = calloc(1, name_end - q + 1);
+        memcpy(name, q, name_end - q);
+        ore_value v = ore_get(ore, name);
+        free(name);
+        if (ore->err != ORE_ERROR_NONE) {
+          free(ks.s);
+          return ore_value_nil();
+        }
+        char* vs = ore_value_to_str(ore, v);
+        kputs(vs, &ks);
+        free(vs);
+        p = name_end + 1;
+        continue;
+      }
+    }
+    kputc(*p, &ks);
+    p++;
+  }
+  if (ks.s == NULL)
+    return ore_value_str_from_ptr(ore, calloc(1, 1), 0);
+  return ore_value_str_from_ptr(ore, ks.s, ks.l);
+}
+
+static ore_value
 ore_cfunc_len(ore_context* ore, int num_in, ore_value* args, void* u) {
   ore_value v = { ORE_TYPE_INT };
   switch (args[0].t) {
@@ -2468,6 +2516,8 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
     }
   case ORE_TAG_STRING:
     {
+      if (t->contents[0] == '"' && strstr(t->contents, "${"))
+        return ore_interp_str(ore, t->contents);
       ore_value v = ore_parse_str(ore, t->contents);
       k = kh_put(ast, ore->ast, (khint64_t)(uintptr_t)t, &r);
       kh_value(ore->ast, k) = v;
