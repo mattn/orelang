@@ -1533,6 +1533,61 @@ ore_cfunc_format(ore_context* ore, int num_in, ore_value* args, void* u) {
 }
 
 static ore_value
+ore_gsub(ore_context* ore, ore_value* args, int global) {
+  if (args[0].t != ORE_TYPE_STRING || args[1].t != ORE_TYPE_REGEXP ||
+      args[2].t != ORE_TYPE_STRING) {
+    fprintf(stderr, "arguments should be string, regexp, string\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  kstring_t pat = { 0, 0, NULL };
+  kputc('(', &pat);
+  kputs(args[1].v.r->p, &pat);
+  kputc(')', &pat);
+  kstring_t ks = { 0, 0, NULL };
+  const char* p = args[0].v.s->p;
+  int remain = args[0].v.s->l;
+  while (remain > 0) {
+    struct slre_cap caps[10];
+    memset(caps, 0, sizeof(caps));
+    int r = slre_match(pat.s, p, remain, caps, 10, 0);
+    if (r <= 0 || caps[0].ptr == NULL)
+      break;
+    kputsn(p, caps[0].ptr - p, &ks);
+    kputs(args[2].v.s->p, &ks);
+    const char* next = caps[0].ptr + caps[0].len;
+    remain -= (int) (next - p);
+    p = next;
+    if (caps[0].len == 0) {
+      if (remain > 0) {
+        kputc(*p, &ks);
+        p++;
+        remain--;
+      } else
+        break;
+    }
+    if (!global)
+      break;
+  }
+  if (remain > 0)
+    kputsn(p, remain, &ks);
+  free(pat.s);
+  if (ks.s == NULL)
+    return ore_value_str_from_ptr(ore, calloc(1, 1), 0);
+  return ore_value_str_from_ptr(ore, ks.s, ks.l);
+}
+
+static ore_value
+ore_cfunc_gsub(ore_context* ore, int num_in, ore_value* args, void* u) {
+  return ore_gsub(ore, args, 1);
+}
+
+static ore_value
+ore_cfunc_sub(ore_context* ore, int num_in, ore_value* args, void* u) {
+  return ore_gsub(ore, args, 0);
+}
+
+static ore_value
 ore_cfunc_typeof(ore_context* ore, int num_in, ore_value* args, void* u) {
   return ore_value_str_from_ptr(ore, (char*) ore_kind(args[0]), -1);
 }
@@ -3313,6 +3368,8 @@ m_program
   ore_define_cfunc(ore, "remove_file", 1, 1, ore_cfunc_remove_file, NULL);
   ore_define_cfunc(ore, "readline", 0, 0, ore_cfunc_readline, NULL);
   ore_define_cfunc(ore, "format", 1, -1, ore_cfunc_format, NULL);
+  ore_define_cfunc(ore, "gsub", 3, 3, ore_cfunc_gsub, NULL);
+  ore_define_cfunc(ore, "sub", 3, 3, ore_cfunc_sub, NULL);
   ore_define_cfunc(ore, "typeof", 1, 1, ore_cfunc_typeof, NULL);
   ore_define_cfunc(ore, "load", 1, 1, ore_cfunc_load, &pc);
   ore_define_cfunc(ore, "environ", 0, 1, ore_cfunc_environ, &pc);
