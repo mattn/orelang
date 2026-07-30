@@ -43,4 +43,12 @@ x1 = 1;
 x2 = 2;
 is("1-2", "${x1}-${x2}", "multiple interpolations");
 
+is("hello world 42", format("%s %s %d", "hello", "world", 42), "format basic");
+is("003", format("%03d", 3), "format width");
+is("1.50", format("%.2f", 1.5), "format precision");
+is("ff", format("%x", 255), "format hex");
+is("100%", format("100%%"), "format percent");
+is("pi=3.14", format("pi=%.2f", 3.14159), "format float");
+is("[1,2]", format("%s", [1, 2]), "format array");
+
 # vim: set ft=ore:

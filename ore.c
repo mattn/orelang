@@ -1441,6 +1441,98 @@ ore_cfunc_readline(ore_context* ore, int num_in, ore_value* args, void* u) {
 }
 
 static ore_value
+ore_cfunc_format(ore_context* ore, int num_in, ore_value* args, void* u) {
+  if (args[0].t != ORE_TYPE_STRING) {
+    fprintf(stderr, "format: first argument should be string\n");
+    ore->err = ORE_ERROR_EXCEPTION;
+    return ore_value_nil();
+  }
+  const char* p = args[0].v.s->p;
+  kstring_t ks = { 0, 0, NULL };
+  int ai = 1;
+  while (*p) {
+    if (*p != '%') {
+      kputc(*p++, &ks);
+      continue;
+    }
+    p++;
+    if (*p == '%') {
+      kputc('%', &ks);
+      p++;
+      continue;
+    }
+    char spec[32];
+    int si = 0;
+    spec[si++] = '%';
+    while (*p && strchr("-+ 0#", *p) && si < 8) spec[si++] = *p++;
+    while (*p >= '0' && *p <= '9' && si < 16) spec[si++] = *p++;
+    if (*p == '.') {
+      spec[si++] = *p++;
+      while (*p >= '0' && *p <= '9' && si < 24) spec[si++] = *p++;
+    }
+    char verb = *p;
+    if (!verb) break;
+    p++;
+    if (ai >= num_in) {
+      fprintf(stderr, "format: not enough arguments\n");
+      ore->err = ORE_ERROR_EXCEPTION;
+      free(ks.s);
+      return ore_value_nil();
+    }
+    ore_value v = args[ai++];
+    char buf[512];
+    if (verb == 'd' || verb == 'x' || verb == 'X' || verb == 'o') {
+      int iv;
+      if (v.t == ORE_TYPE_INT) iv = v.v.i;
+      else if (v.t == ORE_TYPE_FLOAT) iv = (int) v.v.d;
+      else if (v.t == ORE_TYPE_BOOL) iv = v.v.b ? 1 : 0;
+      else {
+        fprintf(stderr, "format: %%%c expects number\n", verb);
+        ore->err = ORE_ERROR_EXCEPTION;
+        free(ks.s);
+        return ore_value_nil();
+      }
+      spec[si++] = verb;
+      spec[si] = 0;
+      snprintf(buf, sizeof(buf), spec, iv);
+      kputs(buf, &ks);
+    } else if (verb == 'f' || verb == 'g' || verb == 'e') {
+      double d;
+      if (v.t == ORE_TYPE_FLOAT) d = v.v.d;
+      else if (v.t == ORE_TYPE_INT) d = (double) v.v.i;
+      else {
+        fprintf(stderr, "format: %%%c expects number\n", verb);
+        ore->err = ORE_ERROR_EXCEPTION;
+        free(ks.s);
+        return ore_value_nil();
+      }
+      spec[si++] = verb;
+      spec[si] = 0;
+      snprintf(buf, sizeof(buf), spec, d);
+      kputs(buf, &ks);
+    } else if (verb == 's') {
+      char* sv = ore_value_to_str(ore, v);
+      spec[si++] = 's';
+      spec[si] = 0;
+      int need = snprintf(buf, sizeof(buf), spec, sv);
+      if (need >= (int) sizeof(buf))
+        kputs(sv, &ks);
+      else
+        kputs(buf, &ks);
+      free(sv);
+    } else {
+      fprintf(stderr, "format: unknown verb '%%%c'\n", verb);
+      ore->err = ORE_ERROR_EXCEPTION;
+      free(ks.s);
+      return ore_value_nil();
+    }
+  }
+  if (ks.s == NULL)
+    return ore_value_str_from_ptr(ore, calloc(1, 1), 0);
+  return ore_value_str_from_ptr(ore, ks.s, ks.l);
+}
+
+static ore_value
 ore_cfunc_typeof(ore_context* ore, int num_in, ore_value* args, void* u) {
   return ore_value_str_from_ptr(ore, (char*) ore_kind(args[0]), -1);
 }
@@ -3220,6 +3312,7 @@ m_program
   ore_define_cfunc(ore, "append_file", 2, 2, ore_cfunc_append_file, NULL);
   ore_define_cfunc(ore, "remove_file", 1, 1, ore_cfunc_remove_file, NULL);
   ore_define_cfunc(ore, "readline", 0, 0, ore_cfunc_readline, NULL);
+  ore_define_cfunc(ore, "format", 1, -1, ore_cfunc_format, NULL);
   ore_define_cfunc(ore, "typeof", 1, 1, ore_cfunc_typeof, NULL);
   ore_define_cfunc(ore, "load", 1, 1, ore_cfunc_load, &pc);
   ore_define_cfunc(ore, "environ", 0, 1, ore_cfunc_environ, &pc);
