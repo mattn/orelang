@@ -1,4 +1,6 @@
 #ifndef _ORE_H_
+#include <stdint.h>
+#include <inttypes.h>
 #include "mpc.h"
 #include "khash.h"
 #include "klist.h"
@@ -93,7 +95,7 @@ typedef struct _ore_value {
   ore_type t;
   union {
     int b;
-    int i;
+    int64_t i;
     double d;
     ore_string* s;
     ore_array* a;

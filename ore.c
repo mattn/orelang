@@ -477,10 +477,10 @@ ore_parse_num(ore_context* ore, const char* s) {
   const char* p = *s == '-' ? s + 1 : s;
   if (*p == '0' && *(p+1) == 'x') {
     v.t = ORE_TYPE_INT;
-    v.v.i = strtol(s, NULL, 16);
+    v.v.i = strtoll(s, NULL, 16);
   } else if (!strchr(s, '.') && !strchr(s, 'e')) {
     v.t = ORE_TYPE_INT;
-    v.v.i = atoi(s);
+    v.v.i = strtoll(s, NULL, 10);
   } else {
     v.t = ORE_TYPE_FLOAT;
     v.v.d = atof(s);
@@ -1255,13 +1255,13 @@ ore_cfunc_to_int(ore_context* ore, int num_in, ore_value* args, void* u) {
     case ORE_TYPE_INT:
       return args[0];
     case ORE_TYPE_FLOAT:
-      v.v.i = (int) args[0].v.d;
+      v.v.i = (int64_t) args[0].v.d;
       return v;
     case ORE_TYPE_BOOL:
       v.v.i = args[0].v.b ? 1 : 0;
       return v;
     case ORE_TYPE_STRING:
-      v.v.i = (int) strtol(args[0].v.s->p, NULL, 0);
+      v.v.i = strtoll(args[0].v.s->p, NULL, 0);
       return v;
     default:
       break;
@@ -1312,7 +1312,7 @@ ore_cfunc_floor(ore_context* ore, int num_in, ore_value* args, void* u) {
   double d;
   if (ore_value_num(ore, args[0], &d)) return ore_value_nil();
   ore_value v = { ORE_TYPE_INT };
-  v.v.i = (int) floor(d);
+  v.v.i = (int64_t) floor(d);
   return v;
 }
 
@@ -1321,7 +1321,7 @@ ore_cfunc_ceil(ore_context* ore, int num_in, ore_value* args, void* u) {
   double d;
   if (ore_value_num(ore, args[0], &d)) return ore_value_nil();
   ore_value v = { ORE_TYPE_INT };
-  v.v.i = (int) ceil(d);
+  v.v.i = (int64_t) ceil(d);
   return v;
 }
 
@@ -1330,7 +1330,7 @@ ore_cfunc_round(ore_context* ore, int num_in, ore_value* args, void* u) {
   double d;
   if (ore_value_num(ore, args[0], &d)) return ore_value_nil();
   ore_value v = { ORE_TYPE_INT };
-  v.v.i = (int) floor(d + 0.5);
+  v.v.i = (int64_t) floor(d + 0.5);
   return v;
 }
 
@@ -1484,9 +1484,9 @@ ore_cfunc_format(ore_context* ore, int num_in, ore_value* args, void* u) {
     ore_value v = args[ai++];
     char buf[512];
     if (verb == 'd' || verb == 'x' || verb == 'X' || verb == 'o') {
-      int iv;
+      int64_t iv;
       if (v.t == ORE_TYPE_INT) iv = v.v.i;
-      else if (v.t == ORE_TYPE_FLOAT) iv = (int) v.v.d;
+      else if (v.t == ORE_TYPE_FLOAT) iv = (int64_t) v.v.d;
       else if (v.t == ORE_TYPE_BOOL) iv = v.v.b ? 1 : 0;
       else {
         fprintf(stderr, "format: %%%c expects number\n", verb);
@@ -1494,8 +1494,10 @@ ore_cfunc_format(ore_context* ore, int num_in, ore_value* args, void* u) {
         free(ks.s);
         return ore_value_nil();
       }
-      spec[si++] = verb;
-      spec[si] = 0;
+      char pfx[8];
+      strcpy(pfx, PRId64);
+      pfx[strlen(pfx) - 1] = 0;
+      snprintf(spec + si, sizeof(spec) - si, "%s%c", pfx, verb);
       snprintf(buf, sizeof(buf), spec, iv);
       kputs(buf, &ks);
     } else if (verb == 'f' || verb == 'g' || verb == 'e') {
@@ -1675,7 +1677,7 @@ ore_value_to_str(ore_context* ore, ore_value v) {
         kputs("false", &ks);
       break;
     case ORE_TYPE_INT:
-      ksprintf(&ks, "%d", v.v.i);
+      ksprintf(&ks, "%" PRId64, v.v.i);
       break;
     case ORE_TYPE_FLOAT:
       ksprintf(&ks, "%f", v.v.d);
@@ -1783,7 +1785,7 @@ ore_value_to_json(ore_context* ore, ore_value v, kstring_t* ks) {
       kputs(v.v.b ? "true" : "false", ks);
       break;
     case ORE_TYPE_INT:
-      ksprintf(ks, "%d", v.v.i);
+      ksprintf(ks, "%" PRId64, v.v.i);
       break;
     case ORE_TYPE_FLOAT:
       ksprintf(ks, "%g", v.v.d);
@@ -1949,7 +1951,7 @@ json_parse_number(ore_context* ore, const char** pp) {
     return v;
   } else {
     ore_value v = { ORE_TYPE_INT };
-    v.v.i = (int) strtol(start, NULL, 10);
+    v.v.i = strtoll(start, NULL, 10);
     return v;
   }
 }
@@ -2382,7 +2384,7 @@ ore_expr0(ore_context* ore, ore_value lhs, const char* op, ore_value rhs) {
     case ORE_TYPE_INT:
       if (rhs.t == ORE_TYPE_INT || rhs.t== ORE_TYPE_FLOAT)
       {
-        int iv = rhs.t == ORE_TYPE_INT ? rhs.v.i : rhs.t == ORE_TYPE_FLOAT ? (int) rhs.v.d : 0;
+        int64_t iv = rhs.t == ORE_TYPE_INT ? rhs.v.i : rhs.t == ORE_TYPE_FLOAT ? (int64_t) rhs.v.d : 0;
         if (*op == '+') { lhs.v.i += iv; }
         else if (*op == '-') { lhs.v.i -= iv; }
         else if (*op == '*') {
@@ -2392,7 +2394,7 @@ ore_expr0(ore_context* ore, ore_value lhs, const char* op, ore_value rhs) {
               lhs.t = ORE_TYPE_FLOAT;
               lhs.v.d = d;
             } else {
-              int r = 1, b = lhs.v.i, e = iv;
+              int64_t r = 1, b = lhs.v.i, e = iv;
               while (e > 0) {
                 if (e & 1) r *= b;
                 b *= b;
@@ -2464,7 +2466,7 @@ ore_expr0(ore_context* ore, ore_value lhs, const char* op, ore_value rhs) {
         char buf[512], *p = buf;
         if (*op == '+') {
           if (rhs.t == ORE_TYPE_INT)
-            snprintf(buf, sizeof(buf), "%i", rhs.v.i);
+            snprintf(buf, sizeof(buf), "%" PRId64, rhs.v.i);
           else if (rhs.t == ORE_TYPE_FLOAT)
             snprintf(buf, sizeof(buf), "%f", rhs.v.d);
           else if (rhs.t == ORE_TYPE_STRING)
