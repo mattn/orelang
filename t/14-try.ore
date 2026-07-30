@@ -65,3 +65,17 @@ func g() {
 is(8, g(), "return in catch");
 
 # vim: set ft=ore:
+
+msg = "";
+try {
+  no_such_identifier;
+} catch (e) {
+  msg = e;
+}
+ok(index(msg, "unknown identifier") == 0, "catch gets error message");
+
+try {
+  q = 1 / 0;
+} catch (e2) {
+  is("division by zero", e2, "catch division message");
+}

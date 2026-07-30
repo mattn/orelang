@@ -190,6 +190,28 @@ KHASH_MAP_INIT_STR(cfunc, ore_cfunc_t)
 static ore_value ore_call(ore_context*, mpc_ast_t*);
 static ore_value ore_eval(ore_context*, mpc_ast_t*);
 static char* ore_value_to_str(ore_context*, ore_value);
+static ore_value ore_value_str_from_ptr(ore_context*, char*, int);
+
+static void
+ore_raise(ore_context* ore, const char* fmt, ...) {
+  va_list ap;
+  char buf[512];
+  va_start(ap, fmt);
+  vsnprintf(buf, sizeof(buf), fmt, ap);
+  va_end(ap);
+  if (ore) {
+    ore_context* root = ore;
+    while (root->parent) root = root->parent;
+    char* p = strdup(buf);
+    if (p) {
+      ore_value v = ore_value_str_from_ptr(ore, p, -1);
+      ore_value_ref(v);
+      ore_value_unref(root->exc);
+      root->exc = v;
+    }
+    ore->err = ORE_ERROR_EXCEPTION;
+  }
+}
 
 static void
 ore_init_func(ore_func* fn, ore_context* ore, mpc_ast_t* t) {
@@ -696,8 +718,7 @@ ore_object_new(ore_context* ore, mpc_ast_t* t) {
       }
       break;
     default:
-      fprintf(stderr, "unknown class '%s'\n", t->children[1]->contents);
-      ore->err = ORE_ERROR_EXCEPTION;
+      ore_raise(ore, "unknown class '%s'", t->children[1]->contents);
       return ore_value_nil();
   }
   return v;
@@ -871,16 +892,14 @@ ore_cfunc_len(ore_context* ore, int num_in, ore_value* args, void* u) {
     default:
       break;
   }
-  fprintf(stderr, "argument should be string, array or hash\n");
-  ore->err = ORE_ERROR_EXCEPTION;
+  ore_raise(ore, "argument should be string, array or hash");
   return ore_value_nil();
 }
 
 static ore_value
 ore_cfunc_keys(ore_context* ore, int num_in, ore_value* args, void* u) {
   if (args[0].t != ORE_TYPE_HASH) {
-    fprintf(stderr, "argument should be hash\n");
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "argument should be hash");
     return ore_value_nil();
   }
   ore_hash_t* h = (ore_hash_t*) args[0].v.h->p;
@@ -897,8 +916,7 @@ ore_cfunc_keys(ore_context* ore, int num_in, ore_value* args, void* u) {
 static ore_value
 ore_cfunc_values(ore_context* ore, int num_in, ore_value* args, void* u) {
   if (args[0].t != ORE_TYPE_HASH) {
-    fprintf(stderr, "argument should be hash\n");
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "argument should be hash");
     return ore_value_nil();
   }
   ore_hash_t* h = (ore_hash_t*) args[0].v.h->p;
@@ -915,8 +933,7 @@ ore_cfunc_values(ore_context* ore, int num_in, ore_value* args, void* u) {
 static ore_value
 ore_cfunc_has(ore_context* ore, int num_in, ore_value* args, void* u) {
   if (args[0].t != ORE_TYPE_HASH || args[1].t != ORE_TYPE_STRING) {
-    fprintf(stderr, "arguments should be hash and string\n");
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "arguments should be hash and string");
     return ore_value_nil();
   }
   ore_hash_t* h = (ore_hash_t*) args[0].v.h->p;
@@ -927,8 +944,7 @@ ore_cfunc_has(ore_context* ore, int num_in, ore_value* args, void* u) {
 static ore_value
 ore_cfunc_delete(ore_context* ore, int num_in, ore_value* args, void* u) {
   if (args[0].t != ORE_TYPE_HASH || args[1].t != ORE_TYPE_STRING) {
-    fprintf(stderr, "arguments should be hash and string\n");
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "arguments should be hash and string");
     return ore_value_nil();
   }
   ore_hash_t* h = (ore_hash_t*) args[0].v.h->p;
@@ -943,8 +959,7 @@ ore_cfunc_delete(ore_context* ore, int num_in, ore_value* args, void* u) {
 static ore_value
 ore_cfunc_range(ore_context* ore, int num_in, ore_value* args, void* u) {
   if (args[0].t != ORE_TYPE_INT) {
-    fprintf(stderr, "argument should be int\n");
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "argument should be int");
     return ore_value_nil();
   }
   ore_array_t* a = kl_init(value);
@@ -952,8 +967,7 @@ ore_cfunc_range(ore_context* ore, int num_in, ore_value* args, void* u) {
   int to = 0;
   if (num_in == 2) {
     if (args[1].t != ORE_TYPE_INT) {
-      fprintf(stderr, "argument should be int\n");
-      ore->err = ORE_ERROR_EXCEPTION;
+      ore_raise(ore, "argument should be int");
       return ore_value_nil();
     }
     from = args[0].v.i;
@@ -973,8 +987,7 @@ ore_cfunc_range(ore_context* ore, int num_in, ore_value* args, void* u) {
 static ore_value
 ore_cfunc_push(ore_context* ore, int num_in, ore_value* args, void* u) {
   if (args[0].t != ORE_TYPE_ARRAY) {
-    fprintf(stderr, "argument should be array\n");
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "argument should be array");
     return ore_value_nil();
   }
   ore_array_t* a = (ore_array_t*) args[0].v.a->p;
@@ -989,8 +1002,7 @@ ore_cfunc_push(ore_context* ore, int num_in, ore_value* args, void* u) {
 static ore_value
 ore_cfunc_pop(ore_context* ore, int num_in, ore_value* args, void* u) {
   if (args[0].t != ORE_TYPE_ARRAY) {
-    fprintf(stderr, "argument should be array\n");
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "argument should be array");
     return ore_value_nil();
   }
   ore_array_t* a = (ore_array_t*) args[0].v.a->p;
@@ -1012,8 +1024,7 @@ static ore_value
 ore_cfunc_slice(ore_context* ore, int num_in, ore_value* args, void* u) {
   if (args[0].t != ORE_TYPE_ARRAY ||
       args[1].t != ORE_TYPE_INT || args[2].t != ORE_TYPE_INT) {
-    fprintf(stderr, "arguments should be array, int, int\n");
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "arguments should be array, int, int");
     return ore_value_nil();
   }
   ore_array_t* a = (ore_array_t*) args[0].v.a->p;
@@ -1042,8 +1053,7 @@ ore_sort_cmp(const void* pa, const void* pb) {
 static ore_value
 ore_cfunc_sort(ore_context* ore, int num_in, ore_value* args, void* u) {
   if (args[0].t != ORE_TYPE_ARRAY) {
-    fprintf(stderr, "argument should be array\n");
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "argument should be array");
     return ore_value_nil();
   }
   ore_array_t* a = (ore_array_t*) args[0].v.a->p;
@@ -1061,16 +1071,14 @@ ore_cfunc_sort(ore_context* ore, int num_in, ore_value* args, void* u) {
     if (v.t == ORE_TYPE_INT || v.t == ORE_TYPE_FLOAT) numeric++;
     else if (v.t == ORE_TYPE_STRING) str++;
     else {
-      fprintf(stderr, "array is not sortable\n");
-      ore->err = ORE_ERROR_EXCEPTION;
+      ore_raise(ore, "array is not sortable");
       free(buf);
       return ore_value_nil();
     }
     buf[i++] = v;
   }
   if (numeric && str) {
-    fprintf(stderr, "cannot sort mixed numbers and strings\n");
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "cannot sort mixed numbers and strings");
     free(buf);
     return ore_value_nil();
   }
@@ -1088,8 +1096,7 @@ static ore_value
 ore_cfunc_substr(ore_context* ore, int num_in, ore_value* args, void* u) {
   if (args[0].t != ORE_TYPE_STRING ||
       args[1].t != ORE_TYPE_INT || args[2].t != ORE_TYPE_INT) {
-    fprintf(stderr, "arguments should be string, int, int\n");
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "arguments should be string, int, int");
     return ore_value_nil();
   }
   int l = args[0].v.s->l;
@@ -1111,8 +1118,7 @@ ore_cfunc_substr(ore_context* ore, int num_in, ore_value* args, void* u) {
 static ore_value
 ore_cfunc_index(ore_context* ore, int num_in, ore_value* args, void* u) {
   if (args[0].t != ORE_TYPE_STRING || args[1].t != ORE_TYPE_STRING) {
-    fprintf(stderr, "arguments should be string\n");
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "arguments should be string");
     return ore_value_nil();
   }
   ore_value v = { ORE_TYPE_INT };
@@ -1124,8 +1130,7 @@ ore_cfunc_index(ore_context* ore, int num_in, ore_value* args, void* u) {
 static ore_value
 ore_cfunc_split(ore_context* ore, int num_in, ore_value* args, void* u) {
   if (args[0].t != ORE_TYPE_STRING || args[1].t != ORE_TYPE_STRING) {
-    fprintf(stderr, "arguments should be string\n");
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "arguments should be string");
     return ore_value_nil();
   }
   const char* s = args[0].v.s->p;
@@ -1156,8 +1161,7 @@ ore_cfunc_split(ore_context* ore, int num_in, ore_value* args, void* u) {
 static ore_value
 ore_cfunc_join(ore_context* ore, int num_in, ore_value* args, void* u) {
   if (args[0].t != ORE_TYPE_ARRAY || args[1].t != ORE_TYPE_STRING) {
-    fprintf(stderr, "arguments should be array and string\n");
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "arguments should be array and string");
     return ore_value_nil();
   }
   ore_array_t* a = (ore_array_t*) args[0].v.a->p;
@@ -1179,16 +1183,14 @@ static ore_value
 ore_cfunc_replace(ore_context* ore, int num_in, ore_value* args, void* u) {
   if (args[0].t != ORE_TYPE_STRING ||
       args[1].t != ORE_TYPE_STRING || args[2].t != ORE_TYPE_STRING) {
-    fprintf(stderr, "arguments should be string\n");
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "arguments should be string");
     return ore_value_nil();
   }
   const char* s = args[0].v.s->p;
   const char* old = args[1].v.s->p;
   int oldlen = args[1].v.s->l;
   if (oldlen == 0) {
-    fprintf(stderr, "empty search string\n");
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "empty search string");
     return ore_value_nil();
   }
   kstring_t ks = { 0, 0, NULL };
@@ -1210,8 +1212,7 @@ ore_cfunc_replace(ore_context* ore, int num_in, ore_value* args, void* u) {
 static ore_value
 ore_str_map_case(ore_context* ore, ore_value* args, int up) {
   if (args[0].t != ORE_TYPE_STRING) {
-    fprintf(stderr, "argument should be string\n");
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "argument should be string");
     return ore_value_nil();
   }
   int l = args[0].v.s->l, i;
@@ -1241,8 +1242,7 @@ ore_cfunc_lower(ore_context* ore, int num_in, ore_value* args, void* u) {
 static ore_value
 ore_cfunc_trim(ore_context* ore, int num_in, ore_value* args, void* u) {
   if (args[0].t != ORE_TYPE_STRING) {
-    fprintf(stderr, "argument should be string\n");
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "argument should be string");
     return ore_value_nil();
   }
   const char* s = args[0].v.s->p;
@@ -1264,8 +1264,7 @@ static int
 ore_value_num(ore_context* ore, ore_value v, double* d) {
   if (v.t == ORE_TYPE_INT) { *d = (double) v.v.i; return 0; }
   if (v.t == ORE_TYPE_FLOAT) { *d = v.v.d; return 0; }
-  fprintf(stderr, "argument should be number\n");
-  ore->err = ORE_ERROR_EXCEPTION;
+  ore_raise(ore, "argument should be number");
   return -1;
 }
 
@@ -1287,8 +1286,7 @@ ore_cfunc_to_int(ore_context* ore, int num_in, ore_value* args, void* u) {
     default:
       break;
   }
-  fprintf(stderr, "cannot convert %s to int\n", ore_kind(args[0]));
-  ore->err = ORE_ERROR_EXCEPTION;
+  ore_raise(ore, "cannot convert %s to int", ore_kind(args[0]));
   return ore_value_nil();
 }
 
@@ -1307,8 +1305,7 @@ ore_cfunc_to_float(ore_context* ore, int num_in, ore_value* args, void* u) {
     default:
       break;
   }
-  fprintf(stderr, "cannot convert %s to float\n", ore_kind(args[0]));
-  ore->err = ORE_ERROR_EXCEPTION;
+  ore_raise(ore, "cannot convert %s to float", ore_kind(args[0]));
   return ore_value_nil();
 }
 
@@ -1323,8 +1320,7 @@ ore_cfunc_abs(ore_context* ore, int num_in, ore_value* args, void* u) {
     v.v.d = fabs(v.v.d);
     return v;
   }
-  fprintf(stderr, "argument should be number\n");
-  ore->err = ORE_ERROR_EXCEPTION;
+  ore_raise(ore, "argument should be number");
   return ore_value_nil();
 }
 
@@ -1377,14 +1373,12 @@ ore_cfunc_pow(ore_context* ore, int num_in, ore_value* args, void* u) {
 static ore_value
 ore_cfunc_read_file(ore_context* ore, int num_in, ore_value* args, void* u) {
   if (args[0].t != ORE_TYPE_STRING) {
-    fprintf(stderr, "argument should be string\n");
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "argument should be string");
     return ore_value_nil();
   }
   FILE* fp = fopen(args[0].v.s->p, "rb");
   if (!fp) {
-    fprintf(stderr, "cannot open file '%s'\n", args[0].v.s->p);
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "cannot open file '%s'", args[0].v.s->p);
     return ore_value_nil();
   }
   fseek(fp, 0, SEEK_END);
@@ -1406,14 +1400,12 @@ ore_cfunc_read_file(ore_context* ore, int num_in, ore_value* args, void* u) {
 static ore_value
 ore_write_file(ore_context* ore, ore_value* args, const char* mode) {
   if (args[0].t != ORE_TYPE_STRING || args[1].t != ORE_TYPE_STRING) {
-    fprintf(stderr, "arguments should be string\n");
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "arguments should be string");
     return ore_value_nil();
   }
   FILE* fp = fopen(args[0].v.s->p, mode);
   if (!fp) {
-    fprintf(stderr, "cannot open file '%s'\n", args[0].v.s->p);
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "cannot open file '%s'", args[0].v.s->p);
     return ore_value_nil();
   }
   size_t n = fwrite(args[1].v.s->p, 1, args[1].v.s->l, fp);
@@ -1434,8 +1426,7 @@ ore_cfunc_append_file(ore_context* ore, int num_in, ore_value* args, void* u) {
 static ore_value
 ore_cfunc_remove_file(ore_context* ore, int num_in, ore_value* args, void* u) {
   if (args[0].t != ORE_TYPE_STRING) {
-    fprintf(stderr, "argument should be string\n");
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "argument should be string");
     return ore_value_nil();
   }
   return remove(args[0].v.s->p) == 0 ? ore_value_true() : ore_value_false();
@@ -1466,8 +1457,7 @@ ore_cfunc_readline(ore_context* ore, int num_in, ore_value* args, void* u) {
 static ore_value
 ore_cfunc_format(ore_context* ore, int num_in, ore_value* args, void* u) {
   if (args[0].t != ORE_TYPE_STRING) {
-    fprintf(stderr, "format: first argument should be string\n");
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "format: first argument should be string");
     return ore_value_nil();
   }
   const char* p = args[0].v.s->p;
@@ -1497,8 +1487,7 @@ ore_cfunc_format(ore_context* ore, int num_in, ore_value* args, void* u) {
     if (!verb) break;
     p++;
     if (ai >= num_in) {
-      fprintf(stderr, "format: not enough arguments\n");
-      ore->err = ORE_ERROR_EXCEPTION;
+      ore_raise(ore, "format: not enough arguments");
       free(ks.s);
       return ore_value_nil();
     }
@@ -1510,8 +1499,7 @@ ore_cfunc_format(ore_context* ore, int num_in, ore_value* args, void* u) {
       else if (v.t == ORE_TYPE_FLOAT) iv = (int64_t) v.v.d;
       else if (v.t == ORE_TYPE_BOOL) iv = v.v.b ? 1 : 0;
       else {
-        fprintf(stderr, "format: %%%c expects number\n", verb);
-        ore->err = ORE_ERROR_EXCEPTION;
+        ore_raise(ore, "format: %%%c expects number", verb);
         free(ks.s);
         return ore_value_nil();
       }
@@ -1526,8 +1514,7 @@ ore_cfunc_format(ore_context* ore, int num_in, ore_value* args, void* u) {
       if (v.t == ORE_TYPE_FLOAT) d = v.v.d;
       else if (v.t == ORE_TYPE_INT) d = (double) v.v.i;
       else {
-        fprintf(stderr, "format: %%%c expects number\n", verb);
-        ore->err = ORE_ERROR_EXCEPTION;
+        ore_raise(ore, "format: %%%c expects number", verb);
         free(ks.s);
         return ore_value_nil();
       }
@@ -1546,8 +1533,7 @@ ore_cfunc_format(ore_context* ore, int num_in, ore_value* args, void* u) {
         kputs(buf, &ks);
       free(sv);
     } else {
-      fprintf(stderr, "format: unknown verb '%%%c'\n", verb);
-      ore->err = ORE_ERROR_EXCEPTION;
+      ore_raise(ore, "format: unknown verb '%%%c'", verb);
       free(ks.s);
       return ore_value_nil();
     }
@@ -1561,8 +1547,7 @@ static ore_value
 ore_gsub(ore_context* ore, ore_value* args, int global) {
   if (args[0].t != ORE_TYPE_STRING || args[1].t != ORE_TYPE_REGEXP ||
       args[2].t != ORE_TYPE_STRING) {
-    fprintf(stderr, "arguments should be string, regexp, string\n");
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "arguments should be string, regexp, string");
     return ore_value_nil();
   }
   kstring_t pat = { 0, 0, NULL };
@@ -1623,8 +1608,7 @@ ore_cfunc_load(ore_context* ore, int num_in, ore_value* args, void* u) {
 
   mpc_result_t result;
   if (args[0].t != ORE_TYPE_STRING) {
-    fprintf(stderr, "argument should be string\n");
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "argument should be string");
     return ore_value_nil();
   }
   if (!mpc_parse_contents(ore_value_str_ptr(args[0]), pctx->program, &result)) {
@@ -1644,8 +1628,7 @@ static ore_value
 ore_cfunc_environ(ore_context* ore, int num_in, ore_value* args, void* u) {
   if (num_in == 1) {
     if (args[0].t != ORE_TYPE_STRING || !args[0].v.s->p) {
-      fprintf(stderr, "argument should be string\n");
-      ore->err = ORE_ERROR_EXCEPTION;
+      ore_raise(ore, "argument should be string");
       return ore_value_nil();
     }
     return ore_value_str_from_ptr(ore, (char*) getenv(args[0].v.s->p), -1);
@@ -1667,16 +1650,14 @@ ore_cfunc_environ(ore_context* ore, int num_in, ore_value* args, void* u) {
     }
     return ore_value_hash_from_khash(ore, h);
   }
-  fprintf(stderr, "invalid argument\n");
-  ore->err = ORE_ERROR_EXCEPTION;
+  ore_raise(ore, "invalid argument");
   return ore_value_nil();
 }
 
 static ore_value
 ore_cfunc_exit(ore_context* ore, int num_in, ore_value* args, void* u) {
   if (args[0].t != ORE_TYPE_INT) {
-    fprintf(stderr, "argument should be int\n");
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "argument should be int");
     return ore_value_nil();
   }
   exit(args[0].v.i);
@@ -1899,8 +1880,7 @@ static ore_value
 json_parse_string(ore_context* ore, const char** pp) {
   const char* p = *pp;
   if (*p != '"') {
-    fprintf(stderr, "json_decode: expected '\"'\n");
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "json_decode: expected '\"'");
     return ore_value_nil();
   }
   p++;
@@ -2039,16 +2019,14 @@ json_parse_value(ore_context* ore, const char** pp) {
   if (*p == 'f' && strncmp(p, "false", 5) == 0) { *pp = p + 5; return ore_value_false(); }
   if (*p == 'n' && strncmp(p, "null", 4) == 0) { *pp = p + 4; return ore_value_nil(); }
   if (*p == '-' || (*p >= '0' && *p <= '9')) return json_parse_number(ore, pp);
-  fprintf(stderr, "json_decode: unexpected character '%c'\n", *p);
-  ore->err = ORE_ERROR_EXCEPTION;
+  ore_raise(ore, "json_decode: unexpected character '%c'", *p);
   return ore_value_nil();
 }
 
 static ore_value
 ore_cfunc_json_decode(ore_context* ore, int num_in, ore_value* args, void* u) {
   if (args[0].t != ORE_TYPE_STRING) {
-    fprintf(stderr, "json_decode: argument should be string\n");
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "json_decode: argument should be string");
     return ore_value_nil();
   }
   const char* p = args[0].v.s->p;
@@ -2113,8 +2091,7 @@ ore_get(ore_context* ore, const char* name) {
     }
     p = p->parent;
   }
-  fprintf(stderr, "unknown identifier '%s'\n", name);
-  ore->err = ORE_ERROR_EXCEPTION;
+  ore_raise(ore, "unknown identifier '%s'", name);
   return ore_value_nil();
 }
 
@@ -2207,11 +2184,7 @@ ore_define_cfunc(ore_context* ore, const char* name, int num_in, int max_in, ore
 ore_value
 ore_func_call(ore_context* ore, ore_value fn, int num_in, ore_value* args) {
   if ((fn.v.f.num_in != -1 && num_in < fn.v.f.num_in) || (fn.v.f.max_in != -1 && num_in > fn.v.f.max_in)) {
-    fprintf(stderr, "number of arguments mismatch: %d for %d\n",
-      num_in, fn.v.f.num_in);
-    fprintf(stderr, "number of arguments mismatch: %d for %d\n",
-      num_in, fn.v.f.max_in);
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "number of arguments mismatch: %d for %d", num_in, fn.v.f.num_in);
     return ore_value_nil();
   }
 
@@ -2275,8 +2248,7 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
   if (ore->err != ORE_ERROR_NONE)
     return ore_value_nil();
   if (fn.t != ORE_TYPE_FUNC && fn.t != ORE_TYPE_CFUNC) {
-    fprintf(stderr, "unknown function '%s'\n", pfn);
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "unknown function '%s'", pfn);
     return ore_value_nil();
   }
   ore_value v = ore_value_nil();
@@ -2285,9 +2257,7 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
       {
         int num_in = t->children_num / 2 - 1, n = 0, i;
         if (num_in < fn.v.f.num_in || (fn.v.f.max_in != -1 && num_in > fn.v.f.max_in)) {
-          fprintf(stderr, "number of arguments mismatch: %d for %d\n",
-            num_in, fn.v.f.num_in);
-          ore->err = ORE_ERROR_EXCEPTION;
+          ore_raise(ore, "number of arguments mismatch: %d for %d", num_in, fn.v.f.num_in);
           return ore_value_nil();
         }
         ore_value* args = (ore_value*) malloc(sizeof(ore_value) * num_in);
@@ -2321,8 +2291,7 @@ ore_call(ore_context* ore, mpc_ast_t *t) {
       }
       break;
     default:
-      fprintf(stderr, "invalid function call\n");
-      ore->err = ORE_ERROR_EXCEPTION;
+      ore_raise(ore, "invalid function call");
       return ore_value_nil();
   }
   return v;
@@ -2332,8 +2301,7 @@ static ore_value*
 ore_index_ref(ore_context* ore, ore_value v, ore_value e, int update) {
   if (v.t == ORE_TYPE_ARRAY) {
     if (e.t != ORE_TYPE_INT) {
-      fprintf(stderr, "array index should be int\n");
-      ore->err = ORE_ERROR_EXCEPTION;
+      ore_raise(ore, "array index should be int");
       return NULL;
     }
     ore_array_t* a = (ore_array_t*) v.v.a->p;
@@ -2345,14 +2313,12 @@ ore_index_ref(ore_context* ore, ore_value v, ore_value e, int update) {
       }
       n++;
     }
-    fprintf(stderr, "out of bounds for array\n");
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "out of bounds for array");
     return NULL;
   }
   if (v.t == ORE_TYPE_HASH) {
     if (e.t != ORE_TYPE_STRING) {
-      fprintf(stderr, "hash index should be string\n");
-      ore->err = ORE_ERROR_EXCEPTION;
+      ore_raise(ore, "hash index should be string");
       return NULL;
     }
     ore_hash_t* h = (ore_hash_t*) v.v.h->p;
@@ -2371,8 +2337,7 @@ ore_index_ref(ore_context* ore, ore_value v, ore_value e, int update) {
   }
   if (v.t == ORE_TYPE_OBJECT) {
     if (e.t != ORE_TYPE_STRING) {
-      fprintf(stderr, "object index should be string\n");
-      ore->err = ORE_ERROR_EXCEPTION;
+      ore_raise(ore, "object index should be string");
       return NULL;
     }
     ore_context* this = (ore_context*) v.v.o->e;
@@ -2389,8 +2354,7 @@ ore_index_ref(ore_context* ore, ore_value v, ore_value e, int update) {
     }
     return NULL;
   }
-  fprintf(stderr, "invalid operation for %s\n", ore_kind(v));
-  ore->err = ORE_ERROR_EXCEPTION;
+  ore_raise(ore, "invalid operation for %s", ore_kind(v));
   return NULL;
 }
 
@@ -2434,21 +2398,18 @@ ore_expr0(ore_context* ore, ore_value lhs, const char* op, ore_value rhs) {
         else if (*op == '|') { lhs.v.i |= iv; }
         else if (*op == '/' || *op == '%') {
           if (iv == 0) {
-            fprintf(stderr, "division by zero\n");
-            ore->err = ORE_ERROR_EXCEPTION;
+            ore_raise(ore, "division by zero");
             return ore_value_nil();
           }
           if (*op == '/') lhs.v.i /= iv;
           else lhs.v.i %= iv;
         }
         else {
-          fprintf(stderr, "unknown operator '%s' for int\n", op);
-          ore->err = ORE_ERROR_EXCEPTION;
+          ore_raise(ore, "unknown operator '%s' for int", op);
           return ore_value_nil();
         }
       } else {
-        fprintf(stderr, "unknown operator '%s' for int\n", op);
-        ore->err = ORE_ERROR_EXCEPTION;
+        ore_raise(ore, "unknown operator '%s' for int", op);
         return ore_value_nil();
       }
       break;
@@ -2465,20 +2426,17 @@ ore_expr0(ore_context* ore, ore_value lhs, const char* op, ore_value rhs) {
         else if (*op == '/') { lhs.v.d /= fv; }
         else if (*op == '%') {
           if (fv == 0) {
-            fprintf(stderr, "division by zero\n");
-            ore->err = ORE_ERROR_EXCEPTION;
+            ore_raise(ore, "division by zero");
             return ore_value_nil();
           }
           lhs.v.d = fmod(lhs.v.d, fv);
         }
         else {
-          fprintf(stderr, "unknown operator '%s' for float\n", op);
-          ore->err = ORE_ERROR_EXCEPTION;
+          ore_raise(ore, "unknown operator '%s' for float", op);
           return ore_value_nil();
         }
       } else {
-        fprintf(stderr, "unknown operator '%s' for float\n", op);
-        ore->err = ORE_ERROR_EXCEPTION;
+        ore_raise(ore, "unknown operator '%s' for float", op);
         return ore_value_nil();
       }
       break;
@@ -2493,8 +2451,7 @@ ore_expr0(ore_context* ore, ore_value lhs, const char* op, ore_value rhs) {
           else if (rhs.t == ORE_TYPE_STRING)
             p = rhs.v.s->p;
           else {
-            fprintf(stderr, "unknown operator '%s' for string\n", op);
-            ore->err = ORE_ERROR_EXCEPTION;
+            ore_raise(ore, "unknown operator '%s' for string", op);
             return ore_value_nil();
           }
 
@@ -2504,15 +2461,13 @@ ore_expr0(ore_context* ore, ore_value lhs, const char* op, ore_value rhs) {
           strcat(s, p);
           lhs = ore_value_str_from_ptr(ore, s, l);
         } else {
-          fprintf(stderr, "unknown operator '%s' for string\n", op);
-          ore->err = ORE_ERROR_EXCEPTION;
+          ore_raise(ore, "unknown operator '%s' for string", op);
           return ore_value_nil();
         }
       }
       break;
     default:
-      fprintf(stderr, "unknown operator '%s' for %s\n", op, ore_kind(lhs));
-      ore->err = ORE_ERROR_EXCEPTION;
+      ore_raise(ore, "unknown operator '%s' for %s", op, ore_kind(lhs));
       return ore_value_nil();
   }
   return lhs;
@@ -2644,8 +2599,7 @@ ore_cmp_lessmore(ore_context* ore, ore_value lhs, ore_value rhs) {
     double r = rhs.t == ORE_TYPE_INT ? (double) rhs.v.i : rhs.v.d;
     return l < r ? -1 : l > r ? 1 : 0;
   }
-  fprintf(stderr, "invalid operator\n");
-  ore->err = ORE_ERROR_EXCEPTION;
+  ore_raise(ore, "invalid operator");
   return 0;
 }
 
@@ -2739,13 +2693,11 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
         ore_value key = ore_eval(ore, t->children[i]);
         if (v.t == ORE_TYPE_STRING) {
           if (key.t != ORE_TYPE_INT) {
-            fprintf(stderr, "string index should be int\n");
-            ore->err = ORE_ERROR_EXCEPTION;
+            ore_raise(ore, "string index should be int");
             return ore_value_nil();
           }
           if (key.v.i < 0 || key.v.i >= v.v.s->l) {
-            fprintf(stderr, "out of bounds for string\n");
-            ore->err = ORE_ERROR_EXCEPTION;
+            ore_raise(ore, "out of bounds for string");
             return ore_value_nil();
           }
           char* p = calloc(1, 2);
@@ -2767,8 +2719,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
         v.t == ORE_TYPE_ENV ? (ore_context*) v.v.e->p : NULL;
       for (i = 2; i < t->children_num; i += 2) {
         if (v.t != ORE_TYPE_OBJECT && v.t != ORE_TYPE_ENV) {
-          fprintf(stderr, "invalid operation for %s\n", ore_kind(v));
-          ore->err = ORE_ERROR_EXCEPTION;
+          ore_raise(ore, "invalid operation for %s", ore_kind(v));
           return ore_value_nil();
         }
         v = ore_prop(this, t->children[i]->contents);
@@ -2802,8 +2753,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
         return ore_value_nil();
       if (v.t == ORE_TYPE_INT) { v.v.i = -v.v.i; return v; }
       if (v.t == ORE_TYPE_FLOAT) { v.v.d = -v.v.d; return v; }
-      fprintf(stderr, "unknown operator '-' for %s\n", ore_kind(v));
-      ore->err = ORE_ERROR_EXCEPTION;
+      ore_raise(ore, "unknown operator '-' for %s", ore_kind(v));
       return ore_value_nil();
     }
     return ore_eval(ore, t->children[1]);
@@ -2935,8 +2885,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
       while (root->parent) root = root->parent;
       ore_parse_context* pctx = (ore_parse_context*) root->c;
       if (!pctx) {
-        fprintf(stderr, "import is not available\n");
-        ore->err = ORE_ERROR_EXCEPTION;
+        ore_raise(ore, "import is not available");
         return ore_value_nil();
       }
       ore_value path = ore_parse_str(ore, t->children[1]->contents);
@@ -3113,8 +3062,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
         return ore_value_nil();
       }
       if (l.t != ORE_TYPE_ARRAY) {
-        fprintf(stderr, "expected array or hash for argument\n");
-        ore->err = ORE_ERROR_EXCEPTION;
+        ore_raise(ore, "expected array or hash for argument");
         return ore_value_nil();
       }
       ore_array_t* a = (ore_array_t*) l.v.a->p;
@@ -3260,8 +3208,7 @@ ore_eval(ore_context* ore, mpc_ast_t* t) {
   case ORE_TAG_SEMI:
     return ore_value_nil();
   default:
-    fprintf(stderr, "unknown operation '%s'\n", t->contents);
-    ore->err = ORE_ERROR_EXCEPTION;
+    ore_raise(ore, "unknown operation '%s'", t->contents);
     return ore_value_nil();
   }
 }
@@ -3567,6 +3514,16 @@ m_program
         mpc_ast_print(result.output);
       ore_eval(ore, result.output);
       mpc_ast_add_child(pc.root, result.output);
+      if (ore->err != ORE_ERROR_NONE) {
+        if (ore->err == ORE_ERROR_EXCEPTION && ore->exc.t != ORE_TYPE_NIL) {
+          char* s = ore_value_to_str(ore, ore->exc);
+          fprintf(stderr, "error: %s\n", s);
+          free(s);
+          ore_value_unref(ore->exc);
+          ore->exc = ore_value_nil();
+        }
+        ore->err = ORE_ERROR_NONE;
+      }
     }
     mpc_ast_delete(pc.root);
   }
